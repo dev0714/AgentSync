@@ -4,10 +4,11 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
 } from 'react';
-import type { Line, Row } from '@/data/portal';
+import { ago, type Line, type Row } from '@/lib/portal-ui';
 
 /* ---- editable configuration fields ---------------------------------- */
 
@@ -95,6 +96,25 @@ export function useRoleField(id: string, initial: string) {
 }
 
 /* ---- presentational primitives -------------------------------------- */
+
+/**
+ * "4m ago", but only once the browser has it.
+ *
+ * How long ago something happened depends on the clock reading it, so the
+ * server and the browser would disagree and React would report a hydration
+ * mismatch. The date renders first and is replaced on mount.
+ */
+export function Ago({ iso }: { iso: string | null }) {
+  const [relative, setRelative] = useState<string | null>(null);
+  useEffect(() => {
+    setRelative(ago(iso));
+    const id = setInterval(() => setRelative(ago(iso)), 30_000);
+    return () => clearInterval(id);
+  }, [iso]);
+
+  if (!iso) return <>—</>;
+  return <>{relative ?? iso.slice(0, 10)}</>;
+}
 
 export function Pill({
   children,
@@ -216,6 +236,39 @@ export function Bar({
       role="presentation"
     >
       <div className="h-full" style={{ width: pct, background: color }} />
+    </div>
+  );
+}
+
+/**
+ * What a screen shows when the tenant has no rows for it.
+ *
+ * It says which table is empty and what would put something in it, because
+ * "nothing here" and "something is broken" look identical otherwise. It never
+ * stands in for data that failed to load — that is an error, not an empty
+ * state, and the screens raise it separately.
+ */
+export function Empty({
+  title,
+  detail,
+  table,
+}: {
+  title: string;
+  detail: string;
+  table?: string;
+}) {
+  return (
+    <div className="card flex flex-col items-start gap-2 p-8">
+      <div className="text-[13.5px] font-semibold text-ink-2">{title}</div>
+      <div
+        className="max-w-[62ch] text-[12.5px] text-muted"
+        style={{ lineHeight: 1.6 }}
+      >
+        {detail}
+      </div>
+      {table ? (
+        <div className="mono mt-1 text-[10px] text-muted-3">{table}</div>
+      ) : null}
     </div>
   );
 }

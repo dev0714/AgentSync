@@ -39,10 +39,14 @@ src/
       Sidebar.tsx         navigation and tenant switcher
       ui.tsx              Pill, Tabs, FieldRows, CodeBlock, TableCard …
       screens/            Tasks, Detail, Ops, Config, Agents, Connections, Tenants
+  lib/
+    portal-data.ts        typed reads for every portal screen
+    portal-ui.ts          colours, status maps, formatters — no data
+    tasks.ts              submission, queue, transitions
+    worker.ts             one tick: reclaim, claim, run a stage
+    memory.ts             recall / remember, prompt rendering
   data/
-    site.ts               marketing copy
-    portal.ts             tasks, approvals, deployments, audit, tenants, connections
-    agents.ts             agent definitions, prompts, tool grants, limits, runs
+    site.ts               marketing copy for the public page
 ```
 
 ## Database
@@ -61,6 +65,7 @@ dedicated `agentsync` schema:
 | `0008_agentsync_state_machine_and_queue.sql` | Legal transitions as data, `transition_task()`, `submit_task()`, and the worker queue.             |
 | `0009_agentsync_source_system_auth.sql`      | Hashed source-system keys, `authenticate_source()`, and the `public.agentsync_*` wrappers.         |
 | `0010_…_fix_authenticate_source_ambiguity`   | Qualifies a column the OUT parameter shadowed.                                                      |
+| `0011_agentsync_portal_reads.sql`            | `portal_overview()` and `portal_task()` — everything the control plane displays.                    |
 
 Applied to the **Supersync** project (`khojukxurlhjjgeeyobo`). For a new
 project:
@@ -273,15 +278,36 @@ rejected.
 
 ## Data
 
-Every screen currently reads fixtures from `src/data/*`. Each configuration
-group carries the Supabase table it maps to (`project_repositories`,
-`agent_definitions`, `tenants.settings`, …), so wiring a screen to the database
-means swapping the fixture import for a query — the component shapes already
-match the tables.
+Every screen reads the database. There are no fixtures behind the portal, so a
+screen with nothing on it means the tenant genuinely has nothing yet — which is
+the useful signal. Each empty state names the table it is reading and what would
+put a row in it.
+
+Two functions supply everything, so a page load is one round trip:
+
+- `agentsync.portal_overview(user_id, tenant_slug)` — the tenant, the tenants
+  the account may switch to, members, projects with their repository/runtime/AI
+  configuration, the task list, metrics, open approvals, deployments, the audit
+  tail, source systems, agent definitions, usage and connections.
+- `agentsync.portal_task(user_id, task_id)` — one task with its plan, file
+  changes, command runs, review, security findings, approvals and event log.
+  Fetched on demand via `/api/portal/tasks/:id`, because loading that for two
+  hundred unopened tasks would be waste.
+
+Both are `SECURITY DEFINER` and check tenant membership themselves. PostgREST
+cannot set `agentsync.user_id` per request, so RLS would see no identity — that
+membership check is what replaces it. A task id guessed from another tenant is
+indistinguishable from one that does not exist.
+
+`src/lib/portal-data.ts` types the payloads; `src/lib/portal-ui.ts` holds the
+colour vocabulary, status maps and formatters. Nothing in `portal-ui` invents a
+row, a count or a name — it only decides how a value that came from the database
+is drawn.
 
 Configuration fields are editable in the browser: `FieldProvider` holds edits for
 the session keyed by `<group>|<field>`, so switching tabs or screens does not
-discard them. Nothing is persisted yet.
+discard them. **Nothing is persisted yet** — the screens read, they do not
+write. The one exception is that no screen shows a Save button it cannot honour.
 
 ## Design system
 

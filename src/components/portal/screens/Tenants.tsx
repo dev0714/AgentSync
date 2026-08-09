@@ -1,86 +1,67 @@
 'use client';
 
-import { DANGER_ACTIONS, ROLE_OPTIONS, TENANTS } from '@/data/portal';
-import { ColLabel, FieldRows, Pill, Tabs, useRoleField } from '../ui';
-
-function UserRow({
-  tenantSlug,
-  index,
-  user,
-}: {
-  tenantSlug: string;
-  index: number;
-  user: { name: string; email: string; role: string; active: string; state: string };
-}) {
-  const [role, setRole] = useRoleField(
-    `tenant.${tenantSlug}.user.${index}`,
-    user.role,
-  );
-
-  const stateColor: [string, string] =
-    user.state === 'ACTIVE'
-      ? ['#122E1E', '#6FD69C']
-      : user.state === 'SERVICE'
-        ? ['#132430', '#7FB6E0']
-        : ['#33240F', '#F5A623'];
-
-  return (
-    <div className="grid min-w-[720px] grid-cols-[minmax(220px,1fr)_190px_140px_100px] items-center gap-3 border-b border-line-faint px-4 py-2.5">
-      <div className="min-w-0">
-        <div className="truncate text-[13px] font-medium">{user.name}</div>
-        <div className="mono truncate text-[10.5px] text-muted-2">
-          {user.email}
-        </div>
-      </div>
-      <select
-        className="field-select"
-        value={role}
-        onChange={(e) => setRole(e.target.value)}
-        aria-label={`Role for ${user.name}`}
-      >
-        {ROLE_OPTIONS.map((r) => (
-          <option key={r} value={r}>
-            {r}
-          </option>
-        ))}
-      </select>
-      <span className="text-[11.5px] text-muted">{user.active}</span>
-      <div className="text-right">
-        <Pill c={stateColor}>{user.state}</Pill>
-      </div>
-    </div>
-  );
-}
+import type { Member, Tenant, TenantSummary } from '@/lib/portal-data';
+import { STATE_COLOUR, rowsFrom, swatch } from '@/lib/portal-ui';
+import { Ago, ColLabel, Empty, FieldRows, Pill, Tabs } from '../ui';
 
 export default function Tenants({
-  selected,
+  tenants,
+  tenant,
+  members,
   onSelect,
   group,
   onGroup,
 }: {
-  selected: string;
+  tenants: TenantSummary[];
+  tenant: Tenant | null;
+  members: Member[];
   onSelect: (slug: string) => void;
   group: number;
   onGroup: (i: number) => void;
 }) {
-  const tenant = TENANTS.find((t) => t.slug === selected) ?? TENANTS[0];
+  if (!tenant) {
+    return (
+      <Empty
+        title="No tenant"
+        detail="This account is not a member of any tenant yet. A tenant owns projects, source systems, connections and members; everything else hangs off one."
+        table="agentsync.tenants · tenant_users"
+      />
+    );
+  }
+
   const groups = [
-    ...tenant.groups.map((g) => ({ ...g, kind: 'form' as const })),
-    { title: 'Users & roles', kind: 'users' as const, table: '', rows: [] },
-    { title: 'Danger zone', kind: 'danger' as const, table: '', rows: [] },
+    {
+      title: 'Identity',
+      table: 'tenants',
+      kind: 'form' as const,
+      rows: rowsFrom({
+        slug: tenant.slug,
+        name: tenant.name,
+        plan: tenant.plan,
+        status: tenant.status,
+        primary_contact: tenant.primary_contact,
+        billing_email: tenant.billing_email,
+        data_region: tenant.data_region,
+        notes: tenant.notes,
+      }),
+    },
+    {
+      title: 'Settings',
+      table: 'tenants.settings',
+      kind: 'form' as const,
+      rows: rowsFrom(tenant.settings),
+      missing:
+        'No tenant settings are stored, so platform defaults apply — including the concurrency cap the queue enforces.',
+    },
+    { title: 'Users & roles', table: 'tenant_users', kind: 'users' as const, rows: [] },
   ];
   const g = groups[Math.min(group, groups.length - 1)];
 
   return (
     <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[268px_1fr]">
       <div className="flex flex-col gap-2">
-        <div className="flex items-center gap-2">
-          <div className="label flex-1">ALL TENANTS</div>
-          <button className="mono cursor-pointer text-[10.5px] text-accent">
-            + New tenant
-          </button>
-        </div>
-        {TENANTS.map((t) => (
+        <div className="label">ALL TENANTS</div>
+        {tenants.map((t) => (
           <button
             key={t.slug}
             onClick={() => {
@@ -89,8 +70,8 @@ export default function Tenants({
             }}
             className="cursor-pointer rounded-lg border p-3 text-left"
             style={{
-              background: selected === t.slug ? '#1A1A1D' : '#141416',
-              borderColor: selected === t.slug ? '#3A3A40' : '#242428',
+              background: tenant.slug === t.slug ? '#1A1A1D' : '#141416',
+              borderColor: tenant.slug === t.slug ? '#3A3A40' : '#242428',
             }}
           >
             <div className="flex items-center gap-2">
@@ -104,7 +85,10 @@ export default function Tenants({
               <span className="mono text-[9.5px] text-muted-2">{t.plan}</span>
             </div>
             <div className="mono mt-1 text-[10px] text-muted-3">{t.slug}</div>
-            <div className="mt-1 text-[11.5px] text-muted">{t.listMeta}</div>
+            <div className="mt-1 text-[11.5px] text-muted">
+              {t.project_count} project{t.project_count === 1 ? '' : 's'} ·{' '}
+              {t.task_count} task{t.task_count === 1 ? '' : 's'}
+            </div>
           </button>
         ))}
       </div>
@@ -124,16 +108,12 @@ export default function Tenants({
                 {tenant.status.toUpperCase()}
               </Pill>
               <span className="mono text-[10.5px] text-muted-2">
-                {tenant.meta}
+                {tenant.plan ?? 'no plan'} · {tenant.data_region ?? 'no region'}
               </span>
             </div>
             <div className="text-[18px] font-semibold tracking-[-0.02em]">
               {tenant.name}
             </div>
-          </div>
-          <div className="flex gap-2">
-            <button className="btn">Impersonate</button>
-            <button className="btn-primary">Save changes</button>
           </div>
         </div>
 
@@ -151,10 +131,13 @@ export default function Tenants({
               <div className="text-[13px] font-semibold">{g.title}</div>
               <div className="mono text-[10px] text-muted-2">{g.table}</div>
             </div>
-            <FieldRows
-              prefix={`tenant.${tenant.slug}.${g.title}`}
-              rows={g.rows}
-            />
+            {g.rows.length === 0 ? (
+              <div className="text-[12.5px] text-muted" style={{ lineHeight: 1.6 }}>
+                {g.missing ?? 'Nothing configured.'}
+              </div>
+            ) : (
+              <FieldRows prefix={`tenant.${tenant.slug}.${g.title}`} rows={g.rows} />
+            )}
           </div>
         ) : null}
 
@@ -166,37 +149,26 @@ export default function Tenants({
               <ColLabel>LAST ACTIVE</ColLabel>
               <ColLabel right>STATE</ColLabel>
             </div>
-            {tenant.users.map((u, i) => (
-              <UserRow
-                key={u.email}
-                tenantSlug={tenant.slug}
-                index={i}
-                user={u}
-              />
-            ))}
-          </div>
-        ) : null}
-
-        {g.kind === 'danger' ? (
-          <div className="flex flex-col gap-2 p-4">
-            {DANGER_ACTIONS.map((da) => (
+            {members.map((u) => (
               <div
-                key={da.title}
-                className="flex flex-col items-start gap-3 rounded-lg border p-3.5 lg:flex-row lg:items-center"
-                style={{ borderColor: '#452020', background: '#1A0F0E' }}
+                key={u.email ?? u.display_name ?? ''}
+                className="grid min-w-[720px] grid-cols-[minmax(220px,1fr)_190px_140px_100px] items-center gap-3 border-b border-line-faint px-4 py-2.5"
               >
-                <div className="min-w-0 flex-1">
-                  <div className="text-[13px] font-semibold text-danger">
-                    {da.title}
+                <div className="min-w-0">
+                  <div className="truncate text-[13px] font-medium">
+                    {u.display_name ?? '—'}
                   </div>
-                  <div
-                    className="mt-1 text-[12px] text-muted"
-                    style={{ lineHeight: 1.55 }}
-                  >
-                    {da.text}
+                  <div className="mono truncate text-[10.5px] text-muted-2">
+                    {u.email ?? '—'}
                   </div>
                 </div>
-                <button className="btn-danger shrink-0">{da.action}</button>
+                <span className="mono text-[11.5px] text-ink-3">{u.role}</span>
+                <span className="text-[11.5px] text-muted">
+                  <Ago iso={u.last_active_at} />
+                </span>
+                <div className="text-right">
+                  <Pill c={swatch(STATE_COLOUR, u.state)}>{u.state}</Pill>
+                </div>
               </div>
             ))}
           </div>

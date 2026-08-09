@@ -1,19 +1,15 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import type { AgentTab } from '@/data/agents';
-import {
-  TASKS,
-  type ConnTab,
-  type DetailTab,
-  type FilterKey,
-} from '@/data/portal';
+import type { Overview } from '@/lib/portal-data';
+import type { FilterKey } from '@/lib/portal-ui';
 import Sidebar from './Sidebar';
 import { FieldProvider } from './ui';
-import Agents from './screens/Agents';
-import Connections from './screens/Connections';
+import Agents, { type AgentTab } from './screens/Agents';
+import Connections, { type ConnTab } from './screens/Connections';
 import { Project, Sources, Usage } from './screens/Config';
-import Detail from './screens/Detail';
+import Detail, { type DetailTab } from './screens/Detail';
 import { Approvals, Audit, Deployments } from './screens/Ops';
 import Tasks from './screens/Tasks';
 import Tenants from './screens/Tenants';
@@ -33,7 +29,7 @@ export type Screen =
 
 const TITLES: Record<Screen, string> = {
   tasks: 'Tasks',
-  detail: 'TICKET-1045',
+  detail: 'Task',
   approvals: 'Approvals queue',
   deployments: 'Deployments',
   audit: 'Audit log',
@@ -46,50 +42,60 @@ const TITLES: Record<Screen, string> = {
 };
 
 const CRUMBS: Record<Screen, string> = {
-  tasks: 'northwind · all projects',
-  detail: 'northwind / customer-portal',
-  approvals: '4 gates open',
-  deployments: 'vercel · git integration',
+  tasks: 'agent_tasks',
+  detail: 'agent_tasks · task_plans · task_file_changes · task_events',
+  approvals: 'task_approvals',
+  deployments: 'deployments',
   audit: 'task_events',
   project:
     'projects · project_repositories · project_runtime_configs · project_ai_configs',
   sources: 'source_systems',
-  usage: 'august 2026',
-  connections: 'github · vercel · supabase · anthropic · openai · secrets',
-  agents: 'agent_definitions · agent_ai_configs · agent_templates',
-  tenants: 'tenants · tenant_users · rls policies',
+  usage: 'task_ai_usage',
+  connections:
+    'github_app_installations · deployment_providers · ai_provider_credentials · secret_references',
+  agents: 'agent_definitions · agent_ai_configs · agent_tools',
+  tenants: 'tenants · tenant_users',
 };
 
 export type PortalUser = {
   name: string;
   role: string;
   email: string | null;
-  /** Tenants this account belongs to; drives the tenant switcher. */
-  tenants: { name: string; slug: string }[];
 };
 
-export default function Portal({ user }: { user: PortalUser }) {
+export default function Portal({
+  user,
+  data,
+}: {
+  user: PortalUser;
+  data: Overview;
+}) {
+  const router = useRouter();
   const [screen, setScreen] = useState<Screen>('tasks');
   const [filter, setFilter] = useState<FilterKey>('all');
+  const [taskId, setTaskId] = useState<string | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>('plan');
-  const [tenant, setTenant] = useState(
-    user.tenants[0]?.name ?? 'Northwind Group',
-  );
   const [connTab, setConnTab] = useState<ConnTab>('overview');
-  const [agentKey, setAgentKey] = useState('engineer');
+  const [agentKey, setAgentKey] = useState<string | null>(null);
   const [agentTab, setAgentTab] = useState<AgentTab>('setup');
   const [setupGroup, setSetupGroup] = useState(0);
+  const [projectId, setProjectId] = useState<string | null>(null);
   const [projectGroup, setProjectGroup] = useState(0);
-  const [tenantSel, setTenantSel] = useState('northwind');
   const [tenantGroup, setTenantGroup] = useState(0);
 
-  const pendingCount = TASKS.filter((t) =>
-    t.status.startsWith('awaiting'),
-  ).length;
+  const pendingCount = data.approvals.length + data.metrics.needs_information;
 
-  const openDetail = (tab: DetailTab) => {
+  const openTask = (id: string, tab: DetailTab = 'plan') => {
+    setTaskId(id);
     setDetailTab(tab);
     setScreen('detail');
+  };
+
+  // The overview is fetched per tenant on the server, so switching tenants is a
+  // navigation rather than client state — that keeps one source of truth for
+  // which tenant's rows are on screen.
+  const switchTenant = (slug: string) => {
+    router.push(`/portal?tenant=${encodeURIComponent(slug)}`);
   };
 
   return (
@@ -98,9 +104,12 @@ export default function Portal({ user }: { user: PortalUser }) {
         <Sidebar
           screen={screen}
           onNavigate={setScreen}
-          tenant={tenant}
-          onTenant={setTenant}
+          tenants={data.tenants}
+          currentTenant={data.tenant}
+          onTenant={switchTenant}
           pendingCount={pendingCount}
+          agentCount={data.agents.length}
+          isPlatformAdmin={data.platform_role === 'SUPER_ADMIN'}
           user={user}
         />
 
@@ -113,12 +122,6 @@ export default function Portal({ user }: { user: PortalUser }) {
               {CRUMBS[screen]}
             </div>
             <div className="flex-1" />
-            <div className="hidden w-[230px] items-center gap-[7px] rounded-[7px] border border-line bg-card px-2.5 py-[5px] lg:flex">
-              <span className="text-xs text-muted-4">⌕</span>
-              <span className="text-xs text-muted-4">
-                Search tasks, refs, branches
-              </span>
-            </div>
             <div
               className="flex items-center gap-1.5 rounded-[7px] border px-[11px] py-[5px]"
               style={{ background: '#101E22', borderColor: '#1B3438' }}
@@ -128,7 +131,7 @@ export default function Portal({ user }: { user: PortalUser }) {
                 className="mono font-medium text-accent"
                 style={{ fontSize: 10.5 }}
               >
-                4 WORKERS LIVE
+                {data.metrics.in_flight} IN FLIGHT
               </span>
             </div>
           </div>
@@ -136,31 +139,54 @@ export default function Portal({ user }: { user: PortalUser }) {
           <div className="flex-1 overflow-y-auto px-6 pt-6 pb-10">
             {screen === 'tasks' ? (
               <Tasks
+                tasks={data.tasks}
+                metrics={data.metrics}
                 filter={filter}
                 onFilter={setFilter}
-                onOpen={() => openDetail('plan')}
+                onOpen={openTask}
               />
             ) : null}
-            {screen === 'detail' ? (
+            {screen === 'detail' && taskId ? (
               <Detail
+                taskId={taskId}
                 tab={detailTab}
                 onTab={setDetailTab}
                 onBack={() => setScreen('tasks')}
               />
             ) : null}
-            {screen === 'approvals' ? <Approvals onOpen={openDetail} /> : null}
-            {screen === 'deployments' ? <Deployments /> : null}
-            {screen === 'audit' ? <Audit /> : null}
-            {screen === 'project' ? (
-              <Project group={projectGroup} onGroup={setProjectGroup} />
+            {screen === 'approvals' ? (
+              <Approvals
+                approvals={data.approvals}
+                onOpen={(id) => openTask(id, 'plan')}
+              />
             ) : null}
-            {screen === 'sources' ? <Sources /> : null}
-            {screen === 'usage' ? <Usage /> : null}
+            {screen === 'deployments' ? (
+              <Deployments deployments={data.deployments} />
+            ) : null}
+            {screen === 'audit' ? <Audit audit={data.audit} /> : null}
+            {screen === 'project' ? (
+              <Project
+                projects={data.projects}
+                selected={projectId}
+                onSelect={setProjectId}
+                group={projectGroup}
+                onGroup={setProjectGroup}
+              />
+            ) : null}
+            {screen === 'sources' ? <Sources sources={data.sources} /> : null}
+            {screen === 'usage' ? (
+              <Usage usage={data.usage} projects={data.projects} />
+            ) : null}
             {screen === 'connections' ? (
-              <Connections tab={connTab} onTab={setConnTab} />
+              <Connections
+                connections={data.connections}
+                tab={connTab}
+                onTab={setConnTab}
+              />
             ) : null}
             {screen === 'agents' ? (
               <Agents
+                agents={data.agents}
                 agentKey={agentKey}
                 onAgent={(k) => {
                   setAgentKey(k);
@@ -174,8 +200,10 @@ export default function Portal({ user }: { user: PortalUser }) {
             ) : null}
             {screen === 'tenants' ? (
               <Tenants
-                selected={tenantSel}
-                onSelect={setTenantSel}
+                tenants={data.tenants}
+                tenant={data.tenant}
+                members={data.members}
+                onSelect={switchTenant}
                 group={tenantGroup}
                 onGroup={setTenantGroup}
               />

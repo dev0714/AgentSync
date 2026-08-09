@@ -7,20 +7,25 @@ export const ACCENT = '#7C9CF5';
 
 export type Line = { text: string; color: string };
 
+// The real contract of POST /api/v1/agent/tasks. The tenant is not in the body
+// — it comes from the source-system key — so this stays accurate as written.
 export const requestLines: Line[] = [
+  { text: 'POST /api/v1/agent/tasks', color: '#F2F2F4' },
+  { text: 'Authorization: Bearer ask_live_…', color: '#6A6A73' },
+  { text: '', color: '#6A6A73' },
   { text: '{', color: '#6A6A73' },
-  { text: '  "tenant_id": "8c1f…9ab2",', color: '#9A9AA3' },
   { text: '  "project_id": "41ad…77e0",', color: '#9A9AA3' },
-  { text: '  "external_reference": "TICKET-1045",', color: ACCENT },
+  { text: '  "idempotency_key": "TICKET-1045",', color: ACCENT },
   { text: '  "request_type": "code_change",', color: '#9A9AA3' },
   { text: '  "title": "Add a status filter to the', color: '#F2F2F4' },
   { text: '            customer dashboard",', color: '#F2F2F4' },
-  { text: '  "acceptance_criteria": [ …4 items ],', color: '#9A9AA3' },
+  { text: '  "acceptance_criteria": [ … ],', color: '#9A9AA3' },
   { text: '  "priority": "normal",', color: '#9A9AA3' },
   { text: '  "callback_url": "https://…/callback"', color: '#9A9AA3' },
   { text: '}', color: '#6A6A73' },
   { text: '', color: '#6A6A73' },
-  { text: '→ 202  task_id: 9f3c1a80  status: queued', color: '#F5A623' },
+  { text: '→ 202  task_id  correlation_id  status: queued', color: '#F5A623' },
+  { text: '   same key again → 200, the original task', color: '#71717B' },
 ];
 
 export const responseLines: Line[] = [

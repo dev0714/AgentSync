@@ -1,26 +1,90 @@
 'use client';
 
-import {
-  CONN_ALERTS,
-  CONN_CARDS,
-  CONN_TABS,
-  CONN_TILES,
-  GH_PERMS,
-  HOOKS,
-  SECRETS,
-  type ConnTab,
-} from '@/data/portal';
-import { ColLabel, FieldRows, Pill, Tabs } from '../ui';
+import type { Connections as ConnectionData } from '@/lib/portal-data';
+import { STATE_COLOUR, rowsFrom, swatch } from '@/lib/portal-ui';
+import { Ago, ColLabel, Empty, FieldRows, Pill, Tabs } from '../ui';
+
+export type ConnTab = 'overview' | 'github' | 'deploy' | 'ai' | 'webhooks' | 'secrets';
+
+export const CONN_TABS: { k: ConnTab; label: string }[] = [
+  { k: 'overview', label: 'Overview' },
+  { k: 'github', label: 'GitHub' },
+  { k: 'deploy', label: 'Deployment' },
+  { k: 'ai', label: 'AI providers' },
+  { k: 'webhooks', label: 'Webhooks' },
+  { k: 'secrets', label: 'Secrets' },
+];
+
+function Card({
+  title,
+  scope,
+  children,
+}: {
+  title: string;
+  scope?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="card overflow-hidden">
+      <div className="flex items-center gap-2.5 border-b border-line px-4 py-3">
+        <div className="text-[13px] font-semibold">{title}</div>
+        {scope ? (
+          <div className="mono text-[10px] text-muted-2">{scope}</div>
+        ) : null}
+      </div>
+      <div className="p-4">{children}</div>
+    </div>
+  );
+}
+
+function Missing({ what }: { what: string }) {
+  return (
+    <div className="text-[12.5px] text-muted" style={{ lineHeight: 1.6 }}>
+      {what}
+    </div>
+  );
+}
 
 export default function Connections({
+  connections,
   tab,
   onTab,
 }: {
+  connections: ConnectionData;
   tab: ConnTab;
   onTab: (t: ConnTab) => void;
 }) {
-  const cards =
-    tab === 'overview' ? CONN_CARDS : CONN_CARDS.filter((c) => c.k === tab);
+  const { github, deployment, ai, secrets, webhooks } = connections;
+
+  // One tile per external system, coloured by whether it is actually connected.
+  const tiles = [
+    {
+      name: 'GitHub',
+      connected: Boolean(github),
+      target: github
+        ? `installation ${String(github.installation_id ?? '')}`
+        : 'no installation',
+      meta: github
+        ? `${(github.repository_allowlist as string[] | null)?.length ?? 0} repositories allowlisted`
+        : 'Required before any task can be checked out.',
+    },
+    {
+      name: 'Deployment',
+      connected: Boolean(deployment),
+      target: deployment ? String(deployment.provider ?? '') : 'no provider',
+      meta: deployment
+        ? `previews on ${String(deployment.preview_on ?? '—')}`
+        : 'Optional. Without it, previews and production deploys are skipped.',
+    },
+    {
+      name: 'AI providers',
+      connected: ai.length > 0,
+      target: ai.length ? ai.map((c) => String(c.provider)).join(', ') : 'none',
+      meta: ai.length
+        ? `${ai.length} credential${ai.length === 1 ? '' : 's'} configured`
+        : 'Required before any agent can call a model.',
+    },
+  ];
 
   return (
     <div className="flex flex-col gap-4">
@@ -37,174 +101,159 @@ export default function Connections({
 
       {tab === 'overview' ? (
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-          {CONN_TILES.map((ct) => (
-            <div key={ct.name} className="card flex flex-col gap-2 p-4">
+          {tiles.map((t) => (
+            <div key={t.name} className="card flex flex-col gap-2 p-4">
               <div className="flex items-center gap-2">
                 <span
                   className="size-1.5 rounded-full"
-                  style={{ background: ct.dot }}
+                  style={{ background: t.connected ? '#4ADE80' : '#6A6A73' }}
                 />
                 <span className="flex-1 text-[13.5px] font-semibold">
-                  {ct.name}
+                  {t.name}
                 </span>
-                <Pill c={ct.c}>{ct.state}</Pill>
+                <Pill c={t.connected ? ['#122E1E', '#6FD69C'] : ['#212125', '#9A9AA3']}>
+                  {t.connected ? 'CONNECTED' : 'NOT CONNECTED'}
+                </Pill>
               </div>
-              <div className="mono text-[10.5px] text-ink-3">{ct.target}</div>
+              <div className="mono text-[10.5px] text-ink-3">{t.target}</div>
               <div className="text-[11.5px] text-muted" style={{ lineHeight: 1.5 }}>
-                {ct.meta}
-              </div>
-              <div className="mt-1 flex items-center gap-2">
-                <button className="btn !px-3 !py-1.5 !text-[11.5px]">
-                  Test
-                </button>
-                <button className="btn !px-3 !py-1.5 !text-[11.5px]">
-                  Configure
-                </button>
-                <div className="flex-1" />
-                <button className="mono cursor-pointer text-[10.5px] text-muted-2 hover:text-danger">
-                  Disable
-                </button>
+                {t.meta}
               </div>
             </div>
           ))}
         </div>
       ) : null}
 
-      {cards.map((c) => (
-        <div
-          key={c.k}
-          className="card overflow-hidden"
-          style={{ maxWidth: tab === 'overview' ? 'none' : 760 }}
-        >
-          <div className="flex items-center gap-2.5 border-b border-line px-4 py-3">
-            <div className="text-[13px] font-semibold">{c.title}</div>
-            <div className="mono text-[10px] text-muted-2">{c.scope}</div>
-          </div>
-          <div className="p-4">
-            <FieldRows prefix={`conn.${c.title}`} rows={c.rows} />
-          </div>
-        </div>
-      ))}
-
       {tab === 'github' ? (
-        <div className="card overflow-hidden" style={{ maxWidth: 760 }}>
-          <div className="flex items-center gap-2.5 border-b border-line px-4 py-3">
-            <div className="text-[13px] font-semibold">
-              GitHub App permissions
-            </div>
-            <div className="mono text-[10px] text-muted-2">
-              least privilege · 3 repositories
-            </div>
-          </div>
-          <div className="grid grid-cols-1 gap-x-6 sm:grid-cols-2">
-            {GH_PERMS.map((p) => (
-              <div
-                key={p.scope}
-                className="flex items-center justify-between gap-3 border-b border-line-faint px-4 py-2.5"
+        <Card title="GitHub App installation" scope="github_app_installations">
+          {github ? (
+            <FieldRows prefix="conn.github" rows={rowsFrom(github)} />
+          ) : (
+            <Missing what="No GitHub App is installed for this tenant. Until one is, the analyse stage has no repository to check out and every task fails there with the reason recorded." />
+          )}
+        </Card>
+      ) : null}
+
+      {tab === 'deploy' ? (
+        <Card title="Deployment provider" scope="deployment_providers">
+          {deployment ? (
+            <FieldRows prefix="conn.deploy" rows={rowsFrom(deployment)} />
+          ) : (
+            <Missing what="No deployment provider is connected. Tasks still reach a pull request; preview and production deployments are simply skipped." />
+          )}
+        </Card>
+      ) : null}
+
+      {tab === 'ai' ? (
+        ai.length === 0 ? (
+          <Empty
+            title="No AI provider credential"
+            detail="Each credential names a provider, a model, a spend cap and the secret reference holding the key. Without one, no agent can make a model call."
+            table="agentsync.ai_provider_credentials"
+          />
+        ) : (
+          <div className="flex flex-col gap-4">
+            {ai.map((c, i) => (
+              <Card
+                key={String(c.id ?? i)}
+                title={String(c.provider)}
+                scope="ai_provider_credentials"
               >
-                <div className="mono text-[11.5px] text-ink-2">{p.scope}</div>
-                <Pill c={p.c}>{p.level}</Pill>
-              </div>
+                <FieldRows prefix={`conn.ai.${i}`} rows={rowsFrom(c)} />
+              </Card>
             ))}
           </div>
-        </div>
+        )
       ) : null}
 
       {tab === 'webhooks' ? (
-        <div className="card overflow-hidden">
-          <div className="flex items-center gap-2.5 border-b border-line px-4 py-3">
-            <div className="text-[13px] font-semibold">Webhook endpoints</div>
-            <div className="mono text-[10px] text-muted-2">
-              signed · replay window 300s
+        webhooks.length === 0 ? (
+          <Empty
+            title="No webhook endpoints"
+            detail="Inbound endpoints receive GitHub and deployment events; outbound ones deliver signed callbacks to the system that submitted a task."
+            table="agentsync.webhook_endpoints"
+          />
+        ) : (
+          <div className="card overflow-hidden">
+            <div className="flex items-center gap-2.5 border-b border-line px-4 py-3">
+              <div className="text-[13px] font-semibold">Webhook endpoints</div>
+              <div className="mono text-[10px] text-muted-2">signed</div>
             </div>
-          </div>
-          {HOOKS.map((h) => (
-            <div
-              key={h.path}
-              className="flex flex-wrap items-center gap-3 border-b border-line-faint px-4 py-2.5 last:border-b-0"
-            >
+            {webhooks.map((h) => (
               <div
-                className="mono w-8 shrink-0 text-[10px]"
-                style={{ color: h.dirFg }}
+                key={h.path}
+                className="flex flex-wrap items-center gap-3 border-b border-line-faint px-4 py-2.5 last:border-b-0"
               >
-                {h.dir}
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="mono truncate text-[11.5px] text-ink-2">
-                  {h.path}
+                <div
+                  className="mono w-8 shrink-0 text-[10px]"
+                  style={{ color: h.direction === 'inbound' ? '#7FB6E0' : '#6FD69C' }}
+                >
+                  {h.direction === 'inbound' ? 'IN' : 'OUT'}
                 </div>
-                <div className="text-[11px] text-muted-2">{h.note}</div>
+                <div className="min-w-0 flex-1">
+                  <div className="mono truncate text-[11.5px] text-ink-2">
+                    {h.path}
+                  </div>
+                  <div className="text-[11px] text-muted-2">{h.note ?? ''}</div>
+                </div>
+                <div className="mono text-[10.5px] text-muted-2">
+                  replay {h.replay_window_seconds ?? '—'}s
+                </div>
+                <Pill c={h.enabled ? ['#122E1E', '#6FD69C'] : ['#212125', '#9A9AA3']}>
+                  {h.enabled ? 'ENABLED' : 'DISABLED'}
+                </Pill>
               </div>
-              <div
-                className="mono text-[10.5px]"
-                style={{ color: h.statFg }}
-              >
-                {h.stat}
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )
       ) : null}
 
       {tab === 'secrets' ? (
-        <div className="card overflow-hidden">
-          <div className="flex items-center gap-2.5 border-b border-line px-4 py-3">
-            <div className="text-[13px] font-semibold">Secret references</div>
-            <div className="mono text-[10px] text-muted-2">
-              values never leave the secret manager
-            </div>
-          </div>
-          <div className="overflow-x-auto">
-            <div className="grid min-w-[720px] grid-cols-[minmax(280px,1fr)_160px_120px_90px] gap-3 border-b border-line bg-raised px-4 py-[9px]">
-              <ColLabel>REFERENCE</ColLabel>
-              <ColLabel>USED BY</ColLabel>
-              <ColLabel>ROTATED</ColLabel>
-              <ColLabel right>STATE</ColLabel>
-            </div>
-            {SECRETS.map((sr) => (
-              <div
-                key={sr.ref}
-                className="grid min-w-[720px] grid-cols-[minmax(280px,1fr)_160px_120px_90px] items-center gap-3 border-b border-line-faint px-4 py-2.5"
-              >
-                <div className="mono truncate text-[11px] text-ink-2">
-                  {sr.ref}
-                </div>
-                <div className="text-[12px] text-muted">{sr.used}</div>
-                <div className="mono text-[10.5px] text-muted-2">
-                  {sr.rotated}
-                </div>
-                <div className="text-right">
-                  <Pill c={sr.c}>{sr.state}</Pill>
-                </div>
+        secrets.length === 0 ? (
+          <Empty
+            title="No secret references"
+            detail="AgentSync stores references, never values. Each row names a secret in the secret manager, what uses it, and when it was last rotated."
+            table="agentsync.secret_references"
+          />
+        ) : (
+          <div className="card overflow-hidden">
+            <div className="flex items-center gap-2.5 border-b border-line px-4 py-3">
+              <div className="text-[13px] font-semibold">Secret references</div>
+              <div className="mono text-[10px] text-muted-2">
+                values never leave the secret manager
               </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
-      {tab === 'overview' ? (
-        <div
-          className="rounded-lg border p-4"
-          style={{ borderColor: '#4A3616', background: '#1A1408' }}
-        >
-          <div className="mb-2 flex items-center gap-2">
-            <span className="size-1.5 rounded-full bg-[#F0654A]" />
-            <div className="text-[12.5px] font-semibold text-warn-2">
-              2 connections need attention
+            </div>
+            <div className="overflow-x-auto">
+              <div className="grid min-w-[720px] grid-cols-[minmax(280px,1fr)_160px_120px_90px] gap-3 border-b border-line bg-raised px-4 py-[9px]">
+                <ColLabel>REFERENCE</ColLabel>
+                <ColLabel>USED BY</ColLabel>
+                <ColLabel>ROTATED</ColLabel>
+                <ColLabel right>STATE</ColLabel>
+              </div>
+              {secrets.map((sr) => (
+                <div
+                  key={sr.reference}
+                  className="grid min-w-[720px] grid-cols-[minmax(280px,1fr)_160px_120px_90px] items-center gap-3 border-b border-line-faint px-4 py-2.5"
+                >
+                  <div className="mono truncate text-[11px] text-ink-2">
+                    {sr.reference}
+                  </div>
+                  <div className="text-[12px] text-muted">{sr.used_by ?? '—'}</div>
+                  <div className="mono text-[10.5px] text-muted-2">
+                    <Ago iso={sr.rotated_at} />
+                  </div>
+                  <div className="text-right">
+                    <Pill
+                      c={swatch(STATE_COLOUR, sr.revoked ? 'DISABLED' : 'ACTIVE')}
+                    >
+                      {sr.revoked ? 'REVOKED' : 'ACTIVE'}
+                    </Pill>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
-          <div className="flex flex-col gap-1.5">
-            {CONN_ALERTS.map((a) => (
-              <div
-                key={a}
-                className="text-[12px] text-muted"
-                style={{ lineHeight: 1.55 }}
-              >
-                {a}
-              </div>
-            ))}
-          </div>
-        </div>
+        )
       ) : null}
     </div>
   );

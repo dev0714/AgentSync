@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import type { Tenant, TenantSummary } from '@/lib/portal-data';
 import type { PortalUser, Screen } from './Portal';
 
 const NAV: { group: string; items: { n: string; k: Screen; label: string }[] }[] =
@@ -32,14 +33,6 @@ const NAV: { group: string; items: { n: string; k: Screen; label: string }[] }[]
     },
   ];
 
-/** Fallback list until the tenant screens read from the database. */
-const DEMO_TENANTS = [
-  { name: 'Northwind Group', projects: '6 projects' },
-  { name: 'Meridian Health', projects: '3 projects' },
-  { name: 'Cape Logistics', projects: '2 projects' },
-  { name: 'Internal · AgentSync', projects: '1 project' },
-];
-
 /** Two-letter monogram from a display name: "Andre Dharmalingam" → "AD". */
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -51,16 +44,22 @@ function initials(name: string): string {
 export default function Sidebar({
   screen,
   onNavigate,
-  tenant,
+  tenants,
+  currentTenant,
   onTenant,
   pendingCount,
+  agentCount,
+  isPlatformAdmin,
   user,
 }: {
   screen: Screen;
   onNavigate: (s: Screen) => void;
-  tenant: string;
-  onTenant: (t: string) => void;
+  tenants: TenantSummary[];
+  currentTenant: Tenant | null;
+  onTenant: (slug: string) => void;
   pendingCount: number;
+  agentCount: number;
+  isPlatformAdmin: boolean;
   user: PortalUser;
 }) {
   const [open, setOpen] = useState(false);
@@ -80,6 +79,11 @@ export default function Sidebar({
 
   const isActive = (k: Screen) =>
     screen === k || (k === 'tasks' && screen === 'detail');
+
+  const tenantName = currentTenant?.name ?? 'No tenant';
+  const sections = isPlatformAdmin
+    ? NAV
+    : NAV.filter((s) => s.group !== 'PLATFORM');
 
   return (
     <div className="flex w-[238px] shrink-0 flex-col overflow-hidden bg-surface">
@@ -115,36 +119,36 @@ export default function Sidebar({
         </div>
         <button
           onClick={() => setOpen((v) => !v)}
-          className="flex w-full cursor-pointer items-center gap-[9px] rounded-[7px] border border-[#2A2A2F] bg-raised px-2.5 py-[9px] hover:border-[#2E2E33]"
+          disabled={tenants.length < 2}
+          className="flex w-full cursor-pointer items-center gap-[9px] rounded-[7px] border border-[#2A2A2F] bg-raised px-2.5 py-[9px] hover:border-[#2E2E33] disabled:cursor-default"
         >
           <div
             className="mono flex size-[18px] items-center justify-center rounded-[5px] bg-[#2E2E33] font-semibold text-[#D6D6DC]"
             style={{ fontSize: 9 }}
           >
-            {tenant.slice(0, 2).toUpperCase()}
+            {tenantName.slice(0, 2).toUpperCase()}
           </div>
           <div className="flex-1 truncate text-left text-[12.5px] font-medium text-ink-2">
-            {tenant}
+            {tenantName}
           </div>
-          <div className="text-[9px] text-muted-2">▾</div>
+          {tenants.length > 1 ? (
+            <div className="text-[9px] text-muted-2">▾</div>
+          ) : null}
         </button>
-        {open ? (
+        {open && tenants.length > 1 ? (
           <div className="mt-1.5 flex flex-col gap-px rounded-[7px] border border-[#2A2A2F] bg-raised p-1">
-            {(user.tenants.length
-              ? user.tenants.map((t) => ({ name: t.name, projects: t.slug }))
-              : DEMO_TENANTS
-            ).map((t) => (
+            {tenants.map((t) => (
               <button
-                key={t.name}
+                key={t.slug}
                 onClick={() => {
-                  onTenant(t.name);
+                  onTenant(t.slug);
                   setOpen(false);
                 }}
                 className="flex cursor-pointer justify-between gap-2 rounded-[5px] px-[9px] py-[7px] text-xs text-ink-3 hover:bg-[#242429] hover:text-ink"
               >
                 <span className="truncate">{t.name}</span>
                 <span className="mono text-[10px] text-muted-2">
-                  {t.projects}
+                  {t.project_count} project{t.project_count === 1 ? '' : 's'}
                 </span>
               </button>
             ))}
@@ -153,7 +157,7 @@ export default function Sidebar({
       </div>
 
       <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-3 py-2.5">
-        {NAV.map((section) => (
+        {sections.map((section) => (
           <div key={section.group} className="flex flex-col gap-0.5">
             <div
               className="mono px-2 pt-[18px] pb-2 text-[#66666F]"
@@ -173,7 +177,10 @@ export default function Sidebar({
               >
                 <span className="mono text-[11px] opacity-60">{item.n}</span>
                 <span className="flex-1 text-left">{item.label}</span>
-                {item.k === 'tasks' ? (
+                {/* Counts are shown only when there is something to count —
+                    a badge reading 0 is noise, and one that is always there
+                    stops meaning anything. */}
+                {item.k === 'approvals' && pendingCount > 0 ? (
                   <span
                     className="mono rounded-[20px] bg-[#F0654A] px-1.5 py-px text-white"
                     style={{ fontSize: 10 }}
@@ -181,11 +188,10 @@ export default function Sidebar({
                     {pendingCount}
                   </span>
                 ) : null}
-                {item.k === 'agents' ? (
-                  <span className="mono text-[10px] text-muted-2">7</span>
-                ) : null}
-                {item.k === 'connections' ? (
-                  <span className="size-1.5 rounded-full bg-[#F0654A]" />
+                {item.k === 'agents' && agentCount > 0 ? (
+                  <span className="mono text-[10px] text-muted-2">
+                    {agentCount}
+                  </span>
                 ) : null}
                 {item.k === 'tenants' ? (
                   <span
