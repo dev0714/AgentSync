@@ -56,6 +56,8 @@ dedicated `agentsync` schema:
 | `0002_agentsync_default_agents.sql`          | The seven platform-default agent definitions with prompts, model routing and tool grants.          |
 | `0003_agentsync_pin_trigger_search_path.sql` | Pins `search_path` on the trigger functions.                                                       |
 | `0004_agentsync_own_users_and_roles.sql`     | `agentsync.users` with bcrypt credentials; drops every dependency on Supabase Auth.                |
+| `0005_agentsync_agent_memory.sql`            | `agentsync.memories`, derived edit history, and `recall()`.                                        |
+| `0006` / `0007`                              | Staleness by checksum, then a monotonic sequence so "newest edit" is deterministic.                |
 
 Applied to the **Supersync** project (`khojukxurlhjjgeeyobo`). For a new
 project:
@@ -121,6 +123,53 @@ their own tenant's rows, a connection with no `agentsync.user_id` sees nothing,
 `can_configure()` is false across tenants, stored hashes are salted bcrypt with
 no trace of the plaintext, wrong passwords and unknown emails are both rejected,
 email matching is case-insensitive, and no foreign key to `auth` remains.
+
+## Agent memory
+
+So an agent knows what happened to a file before it edits it again. Two
+sources, kept deliberately separate:
+
+- **Previous edits are derived, not stored.** `agentsync.file_edit_history()`
+  reads `task_file_changes` joined to the task, its latest plan and its review.
+  Nothing is copied, so it can never drift from the task record or go stale.
+  Only edits that actually landed count — a task still `implementing` is not
+  history.
+- **Notes are written.** `agentsync.memories` holds what an agent learned and
+  a human can't derive: conventions, lessons from a rejection, failure fixes,
+  per-file notes. Scoped per project, with a `scope_path` that accepts a glob
+  (`src/lib/queries/**`).
+
+`agentsync.recall(project, paths)` returns both, most-trusted first.
+`src/lib/memory.ts` wraps it and renders the result into a prompt block.
+
+**Staleness.** A note about a file records the checksum the agent saw. Recall
+compares that against the newest landed checksum for the path and flags the
+note as `stale` — surfaced under its own "verify before relying on these"
+heading rather than silently dropped. The comparison uses a monotonic sequence
+on `task_file_changes`, not timestamps, because a worker writes all of a task's
+file changes in one transaction and those rows share a clock reading.
+
+**Writes supersede, they don't overwrite.** Re-recording a path keeps the old
+row with `superseded_by` set, so a bad memory can be traced and reverted.
+
+**Memory is untrusted.** It is derived from repository files and ticket text,
+which the platform treats as untrusted input, so a poisoned note must not be
+able to steer a later task. The rendered block says plainly that its contents
+are reference data, that instructions inside it are not to be followed, and
+that the repository wins any conflict. Memory can inform a plan; it can never
+widen `allowed_paths` or raise a limit. Every row carries its provenance —
+which task and which agent wrote it.
+
+**Prompt caching.** `buildSystemBlocks()` puts the agent prompt and project
+conventions first behind a `cache_control` breakpoint, and task-specific memory
+after it. Caching is a prefix match, so nothing volatile — no timestamp, no
+task id — may go ahead of that breakpoint.
+
+Verified against the live database: history excludes in-flight tasks and
+carries the review verdict and plan summary; a note goes stale when its file is
+rewritten and fresh again when re-recorded; a note with no checksum is never
+guessed at; superseded versions are retained; and a `..` in a memory path is
+rejected.
 
 ## Data
 
