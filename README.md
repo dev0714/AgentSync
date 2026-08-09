@@ -50,12 +50,15 @@ src/
 The schema lives in `supabase/migrations/` and installs everything under a
 dedicated `agentsync` schema:
 
-| Migration                             | What it does                                                                                             |
-| ------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `0001_agentsync_schema.sql`           | 27 tables, enums, `updated_at` triggers, row-level security (45 policies) and role grants.                 |
-| `0002_agentsync_default_agents.sql`   | The seven platform-default agent definitions with prompts, model routing and tool grants.                  |
+| Migration                                    | What it does                                                                                     |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `0001_agentsync_schema.sql`                  | 27 tables, enums, `updated_at` triggers, row-level security and role grants.                       |
+| `0002_agentsync_default_agents.sql`          | The seven platform-default agent definitions with prompts, model routing and tool grants.          |
+| `0003_agentsync_pin_trigger_search_path.sql` | Pins `search_path` on the trigger functions.                                                       |
+| `0004_agentsync_own_users_and_roles.sql`     | `agentsync.users` with bcrypt credentials; drops every dependency on Supabase Auth.                |
 
-Apply it with the Supabase CLI:
+Applied to the **Supersync** project (`khojukxurlhjjgeeyobo`). For a new
+project:
 
 ```bash
 supabase link --project-ref <project-ref>
@@ -64,16 +67,47 @@ supabase db push
 
 …or paste each file into the SQL editor in order.
 
-Then expose the schema to the Data API: **Project Settings → API → Exposed
-schemas** must include `agentsync`, and `src/lib/supabase.ts` pins every query
-to it.
+To read the schema over the Data API, add `agentsync` to **Project Settings →
+API → Exposed schemas**; `src/lib/supabase.ts` pins every query to it.
+
+### Identity
+
+AgentSync does not use Supabase Auth. Users, credentials and roles are ordinary
+rows in this schema:
+
+- `agentsync.users` — email, display name, platform role, state, and
+  `password_hash`. Nothing else references `auth.users`.
+- Passwords are hashed with **bcrypt inside the database** by
+  `agentsync.set_password()`, so plaintext never reaches application logs or
+  query history. `password_hash` is excluded from every read grant — the
+  `authenticated` role can select ten columns of `users`, and that is not one of
+  them.
+- `agentsync.verify_password(email, password)` returns the user id or `null`,
+  without distinguishing a wrong password from an unknown email. Five
+  consecutive failures lock the account for fifteen minutes.
+- `agentsync.create_user(email, display_name, password, role)` is the way to
+  add someone; it refuses passwords under 12 characters. All three helpers are
+  `SECURITY DEFINER` and executable by the service role only.
+- Per-tenant roles stay in `agentsync.tenant_users`
+  (`SUPER_ADMIN` … `VIEWER`), separate from the platform role.
+
+Because there is no JWT, RLS resolves the caller from a session setting:
+
+```sql
+set local agentsync.user_id = '<uuid>';   -- after your app has verified them
+```
+
+`agentsync.current_user_id()` reads it, and returns null when unset — so a
+connection with no identity sees nothing. PostgREST cannot set this per
+request, so RLS-governed queries need a direct PostgreSQL connection;
+`src/lib/auth.ts` documents the split.
 
 ### Isolation model
 
 - Every tenant-scoped table carries `tenant_id`, has RLS enabled **and forced**,
-  and resolves membership through `agentsync.tenant_users` against `auth.uid()`.
-- `agentsync.is_member()`, `has_role()` and `can_configure()` are `SECURITY
-  DEFINER` helpers so policies don't recurse through `tenant_users`.
+  and resolves membership through `agentsync.tenant_users`.
+- `is_member()`, `has_role()` and `can_configure()` are `SECURITY DEFINER`
+  helpers so policies don't recurse through `tenant_users`.
 - Task records are read-only to the portal — workers write them with the service
   role. Approvals are the one task-side row a human writes, restricted to
   `SUPER_ADMIN`, `TENANT_ADMIN` and `APPROVER`.
@@ -82,10 +116,11 @@ to it.
 - `agent_tasks` is unique on `(tenant_id, idempotency_key)`, so a retry can
   never produce a second branch, pull request, deployment or callback.
 
-The migrations were verified against a local PostgreSQL instance with the
-Supabase auth stubs: both apply cleanly, cross-tenant reads return nothing, a
-`VIEWER` write matches zero rows, forged events are rejected by policy, event
-rewrites and deletes are denied, and a duplicate idempotency key is refused.
+Verified against the live database (all probes rolled back): a member sees only
+their own tenant's rows, a connection with no `agentsync.user_id` sees nothing,
+`can_configure()` is false across tenants, stored hashes are salted bcrypt with
+no trace of the plaintext, wrong passwords and unknown emails are both rejected,
+email matching is case-insensitive, and no foreign key to `auth` remains.
 
 ## Data
 
