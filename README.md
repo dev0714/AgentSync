@@ -58,6 +58,9 @@ dedicated `agentsync` schema:
 | `0004_agentsync_own_users_and_roles.sql`     | `agentsync.users` with bcrypt credentials; drops every dependency on Supabase Auth.                |
 | `0005_agentsync_agent_memory.sql`            | `agentsync.memories`, derived edit history, and `recall()`.                                        |
 | `0006` / `0007`                              | Staleness by checksum, then a monotonic sequence so "newest edit" is deterministic.                |
+| `0008_agentsync_state_machine_and_queue.sql` | Legal transitions as data, `transition_task()`, `submit_task()`, and the worker queue.             |
+| `0009_agentsync_source_system_auth.sql`      | Hashed source-system keys, `authenticate_source()`, and the `public.agentsync_*` wrappers.         |
+| `0010_…_fix_authenticate_source_ambiguity`   | Qualifies a column the OUT parameter shadowed.                                                      |
 
 Applied to the **Supersync** project (`khojukxurlhjjgeeyobo`). For a new
 project:
@@ -123,6 +126,103 @@ their own tenant's rows, a connection with no `agentsync.user_id` sees nothing,
 `can_configure()` is false across tenants, stored hashes are salted bcrypt with
 no trace of the plaintext, wrong passwords and unknown emails are both rejected,
 email matching is case-insensitive, and no foreign key to `auth` remains.
+
+## Submitting work
+
+`POST /api/v1/agent/tasks` is the intake for every system that can present a
+source-system key — service desk, intake portal, CRM, cron, another agent.
+
+```http
+POST /api/v1/agent/tasks
+Authorization: Bearer ask_live_…
+Content-Type: application/json
+
+{
+  "project_id": "…uuid…",
+  "idempotency_key": "SD-4821",
+  "title": "Add rate limiting to the public search endpoint",
+  "description": "…",
+  "request_type": "code_change",
+  "priority": "high",
+  "acceptance_criteria": ["429 after 60 req/min", "existing tests pass"],
+  "external_reference": "SD-4821",
+  "requested_by": { "id": "u_91", "name": "Support" },
+  "callback_url": "https://desk.example.com/hooks/agentsync"
+}
+```
+
+```json
+202  { "task_id": "…", "correlation_id": "…", "status": "queued", "duplicate": false }
+```
+
+- **202** for new work, **200** with `duplicate: true` when the
+  `idempotency_key` has been seen before for that tenant. The original task is
+  returned rather than a second one started, so a caller that retries on a
+  timeout never causes a duplicate branch, pull request or deployment.
+- Errors carry a machine-readable code, not just prose:
+  `INVALID_API_KEY` 401 · `SOURCE_DISABLED` / `IP_NOT_ALLOWED` 403 ·
+  `PROJECT_NOT_FOUND` 404 · `PROJECT_DISABLED` 409 · `RATE_LIMITED` 429 ·
+  `VALIDATION_FAILED` 422 (with every problem listed at once, not one per round
+  trip).
+- `callback_url` must be an absolute `https` URL — it is an outbound request
+  AgentSync will make on the caller's behalf.
+
+Keys are issued once and stored hashed:
+
+```sql
+select public.agentsync_issue_source_key('acme', 'Service desk', '{}', 60, true);
+-- {"source_system_id": "…", "api_key": "ask_live_…"}   ← shown exactly once
+```
+
+`agentsync.authenticate_source()` looks the key up by its stored prefix, compares
+the bcrypt hash, then enforces the IP allowlist and the per-minute rate limit —
+so no caller can skip one of those by forgetting to check it.
+
+### State machine
+
+Legal moves are **rows**, not code: `agentsync.task_transitions` holds every
+`(from, to)` pair with a `requires_human` flag, and
+`agentsync.transition_task()` refuses anything not in it. The audit event is
+written in the same transaction as the status change, so the log cannot
+disagree with the record, and a worker-driven move must present the worker id
+holding the task.
+
+```
+received → validating → queued → analysing → planning
+  → awaiting_plan_approval? → implementing ⇄ testing
+  → creating_pull_request → deploying_preview? → awaiting_merge_approval
+  → deploying_production → completed → rolled_back?
+```
+
+`needs_information` is reachable from any working stage, `failed` from any
+stage that can error, and `cancelled` from anything not yet merged.
+
+### Queue and workers
+
+`agentsync.claim_next_task()` takes one queued task with
+`for update skip locked`, ordered by priority then age, and refuses to exceed
+the tenant's `maximum_concurrent_tasks`. The claim sets a lease;
+`heartbeat_task()` extends it and `reclaim_expired_tasks()` returns tasks whose
+worker died. A crashed worker therefore loses nothing — the lease expires and
+the task goes back on the queue.
+
+On Vercel there is no long-running process, so the loop lives in a cron
+(`vercel.json`) that calls `/api/v1/worker/tick`, authorised by `WORKER_SECRET`
+(or Vercel's `CRON_SECRET`) — never by a source-system key. Each tick reclaims,
+claims at most one task, and runs exactly one stage.
+
+**What is not built yet.** The `analyse` stage needs a GitHub App installation
+and a checkout workspace; the `plan` stage needs `ANTHROPIC_API_KEY` and a
+provider adapter. Both throw `StageNotConfigured` and fail the task with that
+reason on the record, rather than silently advancing it — a stage that no-ops
+would move a task forward with nothing behind it, which is the one failure mode
+this pipeline must not have.
+
+Verified against the live database (all probes rolled back): an illegal
+transition is refused, two concurrent claims never take the same task, the
+concurrency cap holds, a repeated idempotency key returns the original task, a
+disabled source and a non-allowlisted IP are both rejected, and an expired
+lease returns its task to the queue.
 
 ## Agent memory
 
