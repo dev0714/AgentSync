@@ -180,6 +180,7 @@ export default function Portal({
             {screen === 'connections' ? (
               <Connections
                 connections={data.connections}
+                tenantSlug={data.tenant?.slug ?? null}
                 tab={connTab}
                 onTab={setConnTab}
               />

@@ -220,6 +220,94 @@ export function CodeBlock({ lines }: { lines: Line[] }) {
   );
 }
 
+/**
+ * A block of text meant to be pasted somewhere else, with a copy button.
+ *
+ * Separate from CodeBlock because that one renders coloured lines for display;
+ * this one owns a single string so what is copied is exactly what is shown.
+ */
+export function CopyBlock({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard access can be refused; the text is on screen either way.
+      setCopied(false);
+    }
+  }
+
+  return (
+    <div className="relative">
+      <button
+        onClick={copy}
+        className="mono absolute top-2 right-2 cursor-pointer rounded-[5px] border border-line bg-raised px-2 py-1 text-[10px] text-muted-2 hover:text-ink-2"
+      >
+        {copied ? 'COPIED' : 'COPY'}
+      </button>
+      <pre className="mono overflow-x-auto rounded-lg border border-line bg-canvas p-3.5 pr-16 text-ink-3" style={{ fontSize: 11.5, lineHeight: 1.75 }}>
+        {text}
+      </pre>
+    </div>
+  );
+}
+
+/**
+ * Numbered setup steps for something the portal cannot yet do for you.
+ *
+ * It exists so a screen that has nothing to show still tells you how to put
+ * something there. Where a step cannot be completed in the browser, it says so
+ * and gives the exact command instead of implying a button exists.
+ */
+export type SetupStep = {
+  title: string;
+  body?: React.ReactNode;
+  code?: string;
+  href?: { label: string; url: string };
+};
+
+export function SetupSteps({ steps }: { steps: SetupStep[] }) {
+  return (
+    <ol className="flex flex-col gap-5">
+      {steps.map((s, i) => (
+        <li key={s.title} className="grid grid-cols-[26px_1fr] gap-3">
+          <div
+            className="mono mt-px flex size-[22px] items-center justify-center rounded-full border border-line text-muted-2"
+            style={{ fontSize: 10 }}
+          >
+            {i + 1}
+          </div>
+          <div className="flex min-w-0 flex-col gap-2">
+            <div className="text-[13px] font-semibold text-ink-2">{s.title}</div>
+            {s.body ? (
+              <div
+                className="max-w-[76ch] text-[12.5px] text-muted"
+                style={{ lineHeight: 1.6 }}
+              >
+                {s.body}
+              </div>
+            ) : null}
+            {s.href ? (
+              <a
+                className="mono w-fit text-[11px] text-accent"
+                href={s.href.url}
+                target="_blank"
+                rel="noreferrer noopener"
+              >
+                {s.href.label} ↗
+              </a>
+            ) : null}
+            {s.code ? <CopyBlock text={s.code} /> : null}
+          </div>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 export function Bar({
   pct,
   color,

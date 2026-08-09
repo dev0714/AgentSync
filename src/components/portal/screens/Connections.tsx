@@ -2,7 +2,17 @@
 
 import type { Connections as ConnectionData } from '@/lib/portal-data';
 import { STATE_COLOUR, rowsFrom, swatch } from '@/lib/portal-ui';
-import { Ago, ColLabel, Empty, FieldRows, Pill, Tabs } from '../ui';
+import {
+  Ago,
+  ColLabel,
+  Empty,
+  FieldRows,
+  Pill,
+  SetupSteps,
+  Tabs,
+  type SetupStep,
+} from '../ui';
+import GithubForm from './GithubForm';
 
 export type ConnTab = 'overview' | 'github' | 'deploy' | 'ai' | 'webhooks' | 'secrets';
 
@@ -45,21 +55,108 @@ function Missing({ what }: { what: string }) {
   );
 }
 
+/**
+ * How to connect GitHub, in the app rather than in a document nobody has open.
+ *
+ * AgentSync does not yet perform the GitHub App handshake, so the parts that
+ * must happen on github.com are spelled out here rather than hidden behind a
+ * button that would do nothing. The last step says plainly what connecting does
+ * and does not achieve today.
+ */
+function githubSteps(): SetupStep[] {
+  return [
+    {
+      title: 'Create a GitHub App',
+      body: (
+        <>
+          Under <span className="mono text-ink-3">Settings → Developer settings → GitHub Apps → New</span>.
+          Grant the least it can work with: <span className="mono text-ink-3">Contents</span> read
+          and write, <span className="mono text-ink-3">Pull requests</span> read and write,{' '}
+          <span className="mono text-ink-3">Metadata</span> read,{' '}
+          <span className="mono text-ink-3">Checks</span> read. Subscribe to the{' '}
+          <span className="mono text-ink-3">push</span>,{' '}
+          <span className="mono text-ink-3">pull_request</span> and{' '}
+          <span className="mono text-ink-3">check_suite</span> events. Do not grant
+          administration or workflow scopes — the pipeline never needs them, and a
+          task that tries is meant to fail.
+        </>
+      ),
+      href: { label: 'github.com/settings/apps/new', url: 'https://github.com/settings/apps/new' },
+    },
+    {
+      title: 'Generate a private key and a webhook secret',
+      body: (
+        <>
+          Download the <span className="mono text-ink-3">.pem</span> and set a webhook
+          secret on the same page. Neither value is stored in this database — only a
+          reference to where it lives is. Put the real values in your deployment
+          environment.
+        </>
+      ),
+      code: `GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n…"\nGITHUB_WEBHOOK_SECRET="…"`,
+    },
+    {
+      title: 'Install the App on the repositories it may touch',
+      body: (
+        <>
+          Install it, choosing <em>only select repositories</em>. The URL you land on
+          ends in <span className="mono text-ink-3">installations/&lt;id&gt;</span> — that
+          number is the installation id for the next step.
+        </>
+      ),
+    },
+    {
+      title: 'Record the installation below',
+      body: (
+        <>
+          Fill in the form under these steps. The private key and webhook secret are
+          not fields — only the names of the environment variables holding them, so
+          the row can be read back into this page without ever carrying a credential.
+        </>
+      ),
+    },
+    {
+      title: 'What this does, and what it does not',
+      body: (
+        <>
+          This screen will then show GitHub as connected, and the repository allowlist
+          becomes the outer bound on what any agent can reach. It does{' '}
+          <strong className="text-ink-3">not</strong> make tasks run yet: the{' '}
+          <span className="mono text-ink-3">analyse</span> stage still has no checkout
+          workspace and no token minting, so a submitted task goes{' '}
+          <span className="mono text-ink-3">queued → analysing → failed</span> with{' '}
+          <span className="mono text-ink-3">STAGE_NOT_CONFIGURED</span> on the record
+          rather than pretending to progress.
+        </>
+      ),
+    },
+  ];
+}
+
 export default function Connections({
   connections,
+  tenantSlug,
   tab,
   onTab,
 }: {
   connections: ConnectionData;
+  tenantSlug: string | null;
   tab: ConnTab;
   onTab: (t: ConnTab) => void;
 }) {
   const { github, deployment, ai, secrets, webhooks } = connections;
 
   // One tile per external system, coloured by whether it is actually connected.
-  const tiles = [
+  const tiles: {
+    name: string;
+    tab: ConnTab;
+    connected: boolean;
+    target: string;
+    meta: string;
+  }[] = [
     {
       name: 'GitHub',
+      tab: 'github',
       connected: Boolean(github),
       target: github
         ? `installation ${String(github.installation_id ?? '')}`
@@ -70,6 +167,7 @@ export default function Connections({
     },
     {
       name: 'Deployment',
+      tab: 'deploy',
       connected: Boolean(deployment),
       target: deployment ? String(deployment.provider ?? '') : 'no provider',
       meta: deployment
@@ -78,6 +176,7 @@ export default function Connections({
     },
     {
       name: 'AI providers',
+      tab: 'ai',
       connected: ai.length > 0,
       target: ai.length ? ai.map((c) => String(c.provider)).join(', ') : 'none',
       meta: ai.length
@@ -102,7 +201,11 @@ export default function Connections({
       {tab === 'overview' ? (
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
           {tiles.map((t) => (
-            <div key={t.name} className="card flex flex-col gap-2 p-4">
+            <button
+              key={t.name}
+              onClick={() => onTab(t.tab)}
+              className="card flex cursor-pointer flex-col gap-2 p-4 text-left hover:border-[#3A3A40]"
+            >
               <div className="flex items-center gap-2">
                 <span
                   className="size-1.5 rounded-full"
@@ -119,19 +222,28 @@ export default function Connections({
               <div className="text-[11.5px] text-muted" style={{ lineHeight: 1.5 }}>
                 {t.meta}
               </div>
-            </div>
+              <div className="mono mt-1 text-[10px] text-accent">
+                {t.connected ? 'REVIEW →' : 'SET UP →'}
+              </div>
+            </button>
           ))}
         </div>
       ) : null}
 
       {tab === 'github' ? (
-        <Card title="GitHub App installation" scope="github_app_installations">
-          {github ? (
-            <FieldRows prefix="conn.github" rows={rowsFrom(github)} />
-          ) : (
-            <Missing what="No GitHub App is installed for this tenant. Until one is, the analyse stage has no repository to check out and every task fails there with the reason recorded." />
+        <div className="flex flex-col gap-4">
+          {github ? null : (
+            <Card title="Connect GitHub" scope="four steps, once per tenant">
+              <SetupSteps steps={githubSteps()} />
+            </Card>
           )}
-        </Card>
+          <Card
+            title={github ? 'GitHub App installation' : 'Installation details'}
+            scope="github_app_installations"
+          >
+            <GithubForm tenantSlug={tenantSlug} existing={github} />
+          </Card>
+        </div>
       ) : null}
 
       {tab === 'deploy' ? (

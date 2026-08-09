@@ -66,6 +66,7 @@ dedicated `agentsync` schema:
 | `0009_agentsync_source_system_auth.sql`      | Hashed source-system keys, `authenticate_source()`, and the `public.agentsync_*` wrappers.         |
 | `0010_…_fix_authenticate_source_ambiguity`   | Qualifies a column the OUT parameter shadowed.                                                      |
 | `0011_agentsync_portal_reads.sql`            | `portal_overview()` and `portal_task()` — everything the control plane displays.                    |
+| `0012_agentsync_connect_github.sql`          | `connect_github()` / `disconnect_github()`, so the portal can record an installation.               |
 
 Applied to the **Supersync** project (`khojukxurlhjjgeeyobo`). For a new
 project:
@@ -306,8 +307,35 @@ is drawn.
 
 Configuration fields are editable in the browser: `FieldProvider` holds edits for
 the session keyed by `<group>|<field>`, so switching tabs or screens does not
-discard them. **Nothing is persisted yet** — the screens read, they do not
-write. The one exception is that no screen shows a Save button it cannot honour.
+discard them. Most of that is **not persisted yet** — those screens read, they do
+not write, and none of them shows a Save button it cannot honour.
+
+### Connecting GitHub
+
+Connections → GitHub is the one screen that writes. It carries the steps that
+have to happen on github.com — creating the App with least privilege, generating
+the key, installing it on selected repositories — and then a form that records
+the installation, through `POST /api/portal/connections/github`.
+
+- The private key and webhook secret are **not fields**. What is stored is the
+  name of the environment variable holding each one, so the row can be read back
+  into a web page without ever carrying a credential. `connect_github()` rejects
+  a reference that looks like a pasted key.
+- Only a `SUPER_ADMIN` or `TENANT_ADMIN` may connect a repository host — the
+  check is in the database, not the form.
+- `repository_allowlist` entries must be `owner/repository`, and one tenant has
+  one installation: a unique index makes a second save an update rather than a
+  duplicate the portal would never show.
+
+Verified against the live database (probes rolled back): a viewer is refused, a
+malformed repository name, an out-of-range token lifetime, an empty allowlist and
+a pasted private key are each rejected by name, a valid call succeeds, re-saving
+updates in place, and disconnecting removes the row.
+
+**Connecting GitHub does not yet make tasks run.** The `analyse` stage still has
+no checkout workspace and no token minting, so a submitted task goes
+`queued → analysing → failed` with `STAGE_NOT_CONFIGURED` recorded. The screen
+says so as its last setup step.
 
 ## Design system
 
