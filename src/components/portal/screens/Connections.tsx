@@ -1,19 +1,12 @@
 'use client';
 
 import type { Connections as ConnectionData } from '@/lib/portal-data';
-import { STATE_COLOUR, rowsFrom, swatch } from '@/lib/portal-ui';
-import {
-  Ago,
-  ColLabel,
-  Empty,
-  FieldRows,
-  Pill,
-  SetupSteps,
-  Tabs,
-  type SetupStep,
-} from '../ui';
+import { Pill, SetupSteps, Tabs, type SetupStep } from '../ui';
+import AiForm from './AiForm';
 import DeploymentForm from './DeploymentForm';
 import GithubForm from './GithubForm';
+import SecretsForm from './SecretsForm';
+import WebhookForm from './WebhookForm';
 
 export type ConnTab = 'overview' | 'github' | 'deploy' | 'ai' | 'webhooks' | 'secrets';
 
@@ -482,115 +475,27 @@ export default function Connections({
       ) : null}
 
       {tab === 'ai' ? (
-        ai.length === 0 ? (
-          <Empty
-            title="No AI provider credential"
-            detail="Each credential names a provider, a model, a spend cap and the secret reference holding the key. Without one, no agent can make a model call."
-            table="agentsync.ai_provider_credentials"
-          />
-        ) : (
-          <div className="flex flex-col gap-4">
-            {ai.map((c, i) => (
-              <Card
-                key={String(c.id ?? i)}
-                title={String(c.provider)}
-                scope="ai_provider_credentials"
-              >
-                <FieldRows prefix={`conn.ai.${i}`} rows={rowsFrom(c)} />
-              </Card>
-            ))}
-          </div>
-        )
+        <Card
+          title="AI providers"
+          scope="ai_provider_credentials · one credential per provider"
+        >
+          <AiForm tenantSlug={tenantSlug} credentials={ai} />
+        </Card>
       ) : null}
 
       {tab === 'webhooks' ? (
-        webhooks.length === 0 ? (
-          <Empty
-            title="No webhook endpoints"
-            detail="Inbound endpoints receive GitHub and deployment events; outbound ones deliver signed callbacks to the system that submitted a task."
-            table="agentsync.webhook_endpoints"
-          />
-        ) : (
-          <div className="card overflow-hidden">
-            <div className="flex items-center gap-2.5 border-b border-line px-4 py-3">
-              <div className="text-[13px] font-semibold">Webhook endpoints</div>
-              <div className="mono text-[10px] text-muted-2">signed</div>
-            </div>
-            {webhooks.map((h) => (
-              <div
-                key={h.path}
-                className="flex flex-wrap items-center gap-3 border-b border-line-faint px-4 py-2.5 last:border-b-0"
-              >
-                <div
-                  className="mono w-8 shrink-0 text-[10px]"
-                  style={{ color: h.direction === 'inbound' ? '#7FB6E0' : '#6FD69C' }}
-                >
-                  {h.direction === 'inbound' ? 'IN' : 'OUT'}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="mono truncate text-[11.5px] text-ink-2">
-                    {h.path}
-                  </div>
-                  <div className="text-[11px] text-muted-2">{h.note ?? ''}</div>
-                </div>
-                <div className="mono text-[10.5px] text-muted-2">
-                  replay {h.replay_window_seconds ?? '—'}s
-                </div>
-                <Pill c={h.enabled ? ['#122E1E', '#6FD69C'] : ['#212125', '#9A9AA3']}>
-                  {h.enabled ? 'ENABLED' : 'DISABLED'}
-                </Pill>
-              </div>
-            ))}
-          </div>
-        )
+        <Card title="Webhook endpoints" scope="webhook_endpoints · signed">
+          <WebhookForm tenantSlug={tenantSlug} endpoints={webhooks} />
+        </Card>
       ) : null}
 
       {tab === 'secrets' ? (
-        secrets.length === 0 ? (
-          <Empty
-            title="No secret references"
-            detail="AgentSync stores references, never values. Each row names a secret in the secret manager, what uses it, and when it was last rotated."
-            table="agentsync.secret_references"
-          />
-        ) : (
-          <div className="card overflow-hidden">
-            <div className="flex items-center gap-2.5 border-b border-line px-4 py-3">
-              <div className="text-[13px] font-semibold">Secret references</div>
-              <div className="mono text-[10px] text-muted-2">
-                values never leave the secret manager
-              </div>
-            </div>
-            <div className="overflow-x-auto">
-              <div className="grid min-w-[720px] grid-cols-[minmax(280px,1fr)_160px_120px_90px] gap-3 border-b border-line bg-raised px-4 py-[9px]">
-                <ColLabel>REFERENCE</ColLabel>
-                <ColLabel>USED BY</ColLabel>
-                <ColLabel>ROTATED</ColLabel>
-                <ColLabel right>STATE</ColLabel>
-              </div>
-              {secrets.map((sr) => (
-                <div
-                  key={sr.reference}
-                  className="grid min-w-[720px] grid-cols-[minmax(280px,1fr)_160px_120px_90px] items-center gap-3 border-b border-line-faint px-4 py-2.5"
-                >
-                  <div className="mono truncate text-[11px] text-ink-2">
-                    {sr.reference}
-                  </div>
-                  <div className="text-[12px] text-muted">{sr.used_by ?? '—'}</div>
-                  <div className="mono text-[10.5px] text-muted-2">
-                    <Ago iso={sr.rotated_at} />
-                  </div>
-                  <div className="text-right">
-                    <Pill
-                      c={swatch(STATE_COLOUR, sr.revoked ? 'DISABLED' : 'ACTIVE')}
-                    >
-                      {sr.revoked ? 'REVOKED' : 'ACTIVE'}
-                    </Pill>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )
+        <Card
+          title="Secret references"
+          scope="secret_references · values never leave the secret manager"
+        >
+          <SecretsForm tenantSlug={tenantSlug} secrets={secrets} />
+        </Card>
       ) : null}
     </div>
   );

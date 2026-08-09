@@ -71,6 +71,7 @@ dedicated `agentsync` schema:
 | `0014_agentsync_optional_webhook_secret.sql` | Makes the webhook secret optional while nothing receives webhooks.                                  |
 | `0015_agentsync_connect_deployment.sql`      | `connect_deployment()`, plus `is_secret_reference()` — a reference must carry a scheme.              |
 | `0016_…_github_uses_secret_reference_check`  | Holds the GitHub connection to that same rule.                                                      |
+| `0017_agentsync_connect_remaining.sql`       | AI credentials, webhook endpoints and secret references — upsert and delete for each.                |
 
 Applied to the **Supersync** project (`khojukxurlhjjgeeyobo`). For a new
 project:
@@ -379,6 +380,31 @@ row; and GitHub now refuses a bare variable name too.
 As with GitHub, this records the configuration and deploys nothing — no call is
 made to the provider and no deployment webhook is received, so `deployments`
 stays empty until those stages exist.
+
+### The remaining connections
+
+**AI providers** — one credential per provider, so Anthropic and OpenAI can both
+be configured and either can be the fallback for the other. The key is a
+reference, never the value. A credential with no monthly cap *and* no hard stop
+is refused: a cap that stops nothing would read as a limit without being one.
+
+**Webhooks** — inbound paths on this application, outbound `https` callbacks
+elsewhere. An enabled endpoint with no signing secret is refused rather than
+allowed to look configured, since it would accept or send unauthenticated
+traffic; save it disabled while the receiving code does not exist.
+
+**Secrets** — the register of what secrets exist, what uses them and when they
+were last rotated. Recording a rotation is a separate action from editing the
+row, because an edit must not claim a rotation that did not happen — a stale
+date reads as reassurance. Deleting a reference another connection still names
+is refused.
+
+Every one of these resolves the caller through `agentsync.configurable_tenant()`,
+so the role check lives in one place and a new connection type cannot ship
+without it.
+
+Verified against the live database: 30 probes covering each rejection by name,
+upsert-not-duplicate on re-save, delete, and the viewer gate on all three.
 
 ## Design system
 
