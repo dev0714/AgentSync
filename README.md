@@ -69,6 +69,8 @@ dedicated `agentsync` schema:
 | `0012_agentsync_connect_github.sql`          | `connect_github()` / `disconnect_github()`, so the portal can record an installation.               |
 | `0013_agentsync_github_app_id.sql`           | Adds `app_id` — the JWT that mints an installation token is signed against it, not the slug.        |
 | `0014_agentsync_optional_webhook_secret.sql` | Makes the webhook secret optional while nothing receives webhooks.                                  |
+| `0015_agentsync_connect_deployment.sql`      | `connect_deployment()`, plus `is_secret_reference()` — a reference must carry a scheme.              |
+| `0016_…_github_uses_secret_reference_check`  | Holds the GitHub connection to that same rule.                                                      |
 
 Applied to the **Supersync** project (`khojukxurlhjjgeeyobo`). For a new
 project:
@@ -347,6 +349,36 @@ updates in place, and disconnecting removes the row.
 no checkout workspace and no token minting, so a submitted task goes
 `queued → analysing → failed` with `STAGE_NOT_CONFIGURED` recorded. The screen
 says so as its last setup step.
+
+### Connecting a deployment provider
+
+Connections → Deployment does the same for Vercel (Netlify, Cloudflare Pages and
+Render are accepted too). Optional: without it, tasks still reach a pull request
+and the preview and production stages are skipped.
+
+- `preview_on` and `production_trigger` are the settings that decide how much a
+  task does unattended, so the steps argue for `pull_request` and `approval`
+  rather than defaulting them silently.
+- `promote_via_api` while `production_trigger` is `manual` is refused — asking
+  AgentSync to promote through the provider API while saying production is never
+  automatic contradicts itself.
+- `token_scope` is required. It records what the stored token may actually do,
+  so a reviewer can judge the blast radius without logging in to the provider;
+  defaulting it would put a claim on the record nobody made.
+
+**A secret reference must carry a scheme** — `env:VERCEL_API_TOKEN`, not
+`VERCEL_API_TOKEN` and certainly not the token. `agentsync.is_secret_reference()`
+enforces it for both connections. The previous check only caught a pasted PEM,
+which a 24-character Vercel token would have walked straight past.
+
+Verified against the live database: a raw token, an unsupported provider, a
+missing scope, a bad trigger and the promotion contradiction are each rejected by
+name; a valid call succeeds; re-saving updates in place; disconnect removes the
+row; and GitHub now refuses a bare variable name too.
+
+As with GitHub, this records the configuration and deploys nothing — no call is
+made to the provider and no deployment webhook is received, so `deployments`
+stays empty until those stages exist.
 
 ## Design system
 

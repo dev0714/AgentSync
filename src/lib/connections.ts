@@ -73,3 +73,61 @@ export async function disconnectGithub(
   if (result.ok === true) return { ok: true };
   return { ok: false, error: (result.error as string) ?? 'INTERNAL_ERROR' };
 }
+
+export type DeploymentConnection = {
+  tenantSlug: string;
+  provider: string;
+  teamId: string;
+  apiTokenReference: string;
+  tokenScope: string;
+  previewOn: string;
+  productionTrigger: string;
+  promoteViaApi: boolean;
+};
+
+export async function connectDeployment(
+  userId: string,
+  input: DeploymentConnection,
+): Promise<ConnectResult> {
+  const { data, error } = await serviceClient().rpc('agentsync_connect_deployment', {
+    payload: {
+      user_id: userId,
+      tenant_slug: input.tenantSlug,
+      provider: input.provider,
+      team_id: input.teamId,
+      api_token_reference: input.apiTokenReference,
+      token_scope: input.tokenScope,
+      preview_on: input.previewOn,
+      production_trigger: input.productionTrigger,
+      promote_via_api: input.promoteViaApi,
+    },
+  });
+  if (error) {
+    console.error('connectDeployment failed', error);
+    return { ok: false, error: 'INTERNAL_ERROR' };
+  }
+  const result = (data ?? {}) as Record<string, unknown>;
+  if (result.ok === true) return { ok: true };
+  return {
+    ok: false,
+    error: (result.error as string) ?? 'INTERNAL_ERROR',
+    detail: result.detail as string | undefined,
+  };
+}
+
+export async function disconnectDeployment(
+  userId: string,
+  tenantSlug: string,
+): Promise<ConnectResult> {
+  const { data, error } = await serviceClient().rpc('agentsync_disconnect_deployment', {
+    p_user_id: userId,
+    p_tenant_slug: tenantSlug,
+  });
+  if (error) {
+    console.error('disconnectDeployment failed', error);
+    return { ok: false, error: 'INTERNAL_ERROR' };
+  }
+  const result = (data ?? {}) as Record<string, unknown>;
+  if (result.ok === true) return { ok: true };
+  return { ok: false, error: (result.error as string) ?? 'INTERNAL_ERROR' };
+}

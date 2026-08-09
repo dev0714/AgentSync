@@ -12,6 +12,7 @@ import {
   Tabs,
   type SetupStep,
 } from '../ui';
+import DeploymentForm from './DeploymentForm';
 import GithubForm from './GithubForm';
 
 export type ConnTab = 'overview' | 'github' | 'deploy' | 'ai' | 'webhooks' | 'secrets';
@@ -43,14 +44,6 @@ function Card({
         ) : null}
       </div>
       <div className="p-4">{children}</div>
-    </div>
-  );
-}
-
-function Missing({ what }: { what: string }) {
-  return (
-    <div className="text-[12.5px] text-muted" style={{ lineHeight: 1.6 }}>
-      {what}
     </div>
   );
 }
@@ -253,6 +246,112 @@ GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----
   ];
 }
 
+/**
+ * How to connect Vercel.
+ *
+ * Same shape as the GitHub steps and for the same reason: the parts that must
+ * happen on vercel.com cannot be done from here, so they are spelled out rather
+ * than hidden behind a button that would do nothing.
+ */
+function vercelSteps(): SetupStep[] {
+  return [
+    {
+      title: 'Import the repository into Vercel',
+      body: (
+        <>
+          The project AgentSync deploys is an ordinary Vercel project connected to the
+          same repository the GitHub App is installed on. If it is already deployed,
+          this is done — the project you are reading this in counts.
+        </>
+      ),
+      href: { label: 'vercel.com/new', url: 'https://vercel.com/new' },
+    },
+    {
+      title: 'Create an access token',
+      body: (
+        <div className="flex flex-col gap-3">
+          <div className="max-w-[76ch]">
+            <span className="mono text-ink-3">Account Settings → Tokens → Create</span>.
+            Scope it to the team that owns the project, not to your whole account, and
+            give it the shortest expiry you are willing to rotate.
+          </div>
+          <div className="rounded-lg border border-line bg-raised px-3.5 py-2">
+            <Setting
+              name="Scope"
+              value="the team only"
+              why="A full-account token can redeploy every project you have access to, not just this one."
+            />
+            <Setting
+              name="Expiration"
+              value="90 days or less"
+              why="The reference in AgentSync does not change when you rotate the value, so rotation costs one environment-variable edit."
+            />
+          </div>
+          <div className="max-w-[76ch]">
+            The token is shown once. Put it in your deployment environment — it is
+            never stored in this database, only the name of the variable holding it.
+          </div>
+        </div>
+      ),
+      code: `# Vercel → Settings → Environment Variables
+VERCEL_API_TOKEN="…"`,
+      wide: true,
+    },
+    {
+      title: 'Find the team id',
+      body: (
+        <>
+          <span className="mono text-ink-3">Team Settings → General → Team ID</span>, which
+          starts <span className="mono text-ink-3">team_</span>. Leave it empty if the
+          project lives on a personal account rather than a team.
+        </>
+      ),
+    },
+    {
+      title: 'Decide the two triggers',
+      body: (
+        <div className="flex flex-col gap-3">
+          <div className="max-w-[76ch]">
+            These are the settings that decide how much a task can do on its own, so
+            they are worth a moment rather than a default.
+          </div>
+          <div className="rounded-lg border border-line bg-raised px-3.5 py-2">
+            <Setting
+              name="preview_on"
+              value="pull_request"
+              why="Build a preview once the PR opens rather than on every push, so a reviewer has one URL rather than a stream of them."
+            />
+            <Setting
+              name="production_trigger"
+              value="approval"
+              why="Production waits for a human in AgentSync. Choosing merge hands that decision to whoever merges; manual means AgentSync never promotes."
+            />
+            <Setting
+              name="promote_via_api"
+              value="false to start"
+              why="Leave the provider's own git integration in charge until you want AgentSync calling the deploy API itself."
+            />
+          </div>
+        </div>
+      ),
+      wide: true,
+    },
+    {
+      title: 'What this does, and what it does not',
+      body: (
+        <>
+          The connection is recorded and the Deployments screen will show builds once
+          they exist. It does <strong className="text-ink-3">not</strong> deploy
+          anything yet: nothing calls the Vercel API, and no deployment webhook is
+          received, so no row is written to{' '}
+          <span className="mono text-ink-3">deployments</span> until those stages are
+          built. Tasks reach a pull request either way.
+        </>
+      ),
+    },
+  ];
+}
+
 export default function Connections({
   connections,
   tenantSlug,
@@ -367,13 +466,19 @@ export default function Connections({
       ) : null}
 
       {tab === 'deploy' ? (
-        <Card title="Deployment provider" scope="deployment_providers">
-          {deployment ? (
-            <FieldRows prefix="conn.deploy" rows={rowsFrom(deployment)} />
-          ) : (
-            <Missing what="No deployment provider is connected. Tasks still reach a pull request; preview and production deployments are simply skipped." />
+        <div className="flex flex-col gap-4">
+          {deployment ? null : (
+            <Card title="Connect Vercel" scope="optional — tasks reach a pull request without it">
+              <SetupSteps steps={vercelSteps()} />
+            </Card>
           )}
-        </Card>
+          <Card
+            title={deployment ? 'Deployment provider' : 'Provider details'}
+            scope="deployment_providers"
+          >
+            <DeploymentForm tenantSlug={tenantSlug} existing={deployment} />
+          </Card>
+        </div>
       ) : null}
 
       {tab === 'ai' ? (
