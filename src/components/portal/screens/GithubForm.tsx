@@ -142,7 +142,7 @@ export default function GithubForm({
 
   return (
     <form onSubmit={save} className="flex flex-col gap-4">
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         <Field
           label="app_slug"
           hint="The URL form of the name, not the display name: github.com/apps/<slug>. “Agent sync” becomes agent-sync."
@@ -218,7 +218,7 @@ export default function GithubForm({
         />
       </Field>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         <Field
           label="token_ttl_minutes"
           hint="How long a minted installation token stays valid. 5–60."

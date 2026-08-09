@@ -74,7 +74,7 @@ function Setting({
   why: string;
 }) {
   return (
-    <div className="grid grid-cols-1 gap-x-3 gap-y-0.5 border-b border-line-faint py-1.5 last:border-b-0 sm:grid-cols-[190px_130px_1fr]">
+    <div className="grid grid-cols-1 gap-x-5 gap-y-0.5 border-b border-line-faint py-2 last:border-b-0 sm:grid-cols-[minmax(200px,240px)_minmax(140px,180px)_1fr]">
       <div className="mono text-[11px] text-ink-2">{name}</div>
       <div className="mono text-[11px] text-accent">{value}</div>
       <div className="text-[11.5px] text-muted-2" style={{ lineHeight: 1.5 }}>
@@ -90,10 +90,10 @@ function githubSteps(): SetupStep[] {
       title: 'Create the App — the fields on the first form',
       body: (
         <div className="flex flex-col gap-3">
-          <div>
+          <div className="max-w-[76ch]">
             Most of this form is for Apps that sign users in. AgentSync does not: it
-            acts as the App itself, using an installation token. So several required-
-            looking fields are deliberately left empty.
+            acts as the App itself, using an installation token. So several
+            required-looking fields are deliberately left empty.
           </div>
           <div className="rounded-lg border border-line bg-raised px-3.5 py-2">
             <Setting
@@ -143,12 +143,13 @@ function githubSteps(): SetupStep[] {
         label: 'github.com/settings/apps/new',
         url: 'https://github.com/settings/apps/new',
       },
+      wide: true,
     },
     {
       title: 'Permissions — grant only these',
       body: (
         <div className="flex flex-col gap-3">
-          <div>
+          <div className="max-w-[76ch]">
             Under <span className="mono text-ink-3">Repository permissions</span>. Everything
             not listed stays <span className="mono text-ink-3">No access</span>. The
             allowlist you set below bounds <em>which</em> repositories; this bounds{' '}
@@ -186,13 +187,14 @@ function githubSteps(): SetupStep[] {
               why="Would let a task rewrite CI, which is what verifies the task."
             />
           </div>
-          <div>
+          <div className="max-w-[76ch]">
             Organization and Account permissions: none. Leave{' '}
             <span className="mono text-ink-3">Subscribe to events</span> empty — with the
             webhook switched off, nothing would be delivered anyway.
           </div>
         </div>
       ),
+      wide: true,
     },
     {
       title: 'Create it, then note two things and generate a key',

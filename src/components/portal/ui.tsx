@@ -267,6 +267,12 @@ export type SetupStep = {
   body?: React.ReactNode;
   code?: string;
   href?: { label: string; url: string };
+  /**
+   * Let this step use the full width. Prose is capped at a readable measure,
+   * but a step whose body is a table of settings should not be — a line length
+   * chosen for sentences squeezes a three-column table into a corner.
+   */
+  wide?: boolean;
 };
 
 export function SetupSteps({ steps }: { steps: SetupStep[] }) {
@@ -284,7 +290,7 @@ export function SetupSteps({ steps }: { steps: SetupStep[] }) {
             <div className="text-[13px] font-semibold text-ink-2">{s.title}</div>
             {s.body ? (
               <div
-                className="max-w-[76ch] text-[12.5px] text-muted"
+                className={`text-[12.5px] text-muted ${s.wide ? '' : 'max-w-[76ch]'}`}
                 style={{ lineHeight: 1.6 }}
               >
                 {s.body}
