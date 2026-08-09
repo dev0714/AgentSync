@@ -67,6 +67,8 @@ dedicated `agentsync` schema:
 | `0010_…_fix_authenticate_source_ambiguity`   | Qualifies a column the OUT parameter shadowed.                                                      |
 | `0011_agentsync_portal_reads.sql`            | `portal_overview()` and `portal_task()` — everything the control plane displays.                    |
 | `0012_agentsync_connect_github.sql`          | `connect_github()` / `disconnect_github()`, so the portal can record an installation.               |
+| `0013_agentsync_github_app_id.sql`           | Adds `app_id` — the JWT that mints an installation token is signed against it, not the slug.        |
+| `0014_agentsync_optional_webhook_secret.sql` | Makes the webhook secret optional while nothing receives webhooks.                                  |
 
 Applied to the **Supersync** project (`khojukxurlhjjgeeyobo`). For a new
 project:
@@ -317,10 +319,19 @@ have to happen on github.com — creating the App with least privilege, generati
 the key, installing it on selected repositories — and then a form that records
 the installation, through `POST /api/portal/connections/github`.
 
+- The steps cover the whole GitHub form field by field, including the ones whose
+  right answer is *leave it empty* — callback URL, setup URL, user authorization
+  — because AgentSync acts as the App itself and never signs a user in.
+- **Switch the App's webhook off.** Nothing here receives GitHub events yet, so
+  the webhook secret is optional and the field is left blank.
 - The private key and webhook secret are **not fields**. What is stored is the
   name of the environment variable holding each one, so the row can be read back
   into a web page without ever carrying a credential. `connect_github()` rejects
   a reference that looks like a pasted key.
+- Both the **App ID** and the **installation id** are recorded. They are
+  different numbers and easy to swap, so the database refuses a save where they
+  match: the App ID signs the JWT that mints a token, the installation id names
+  which installation that token is for.
 - Only a `SUPER_ADMIN` or `TENANT_ADMIN` may connect a repository host — the
   check is in the database, not the form.
 - `repository_allowlist` entries must be `owner/repository`, and one tenant has

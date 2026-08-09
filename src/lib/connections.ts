@@ -17,6 +17,7 @@ export type ConnectResult =
 export type GithubConnection = {
   tenantSlug: string;
   appSlug: string;
+  appId: number;
   installationId: number;
   privateKeyReference: string;
   webhookSecretReference: string;
@@ -34,6 +35,7 @@ export async function connectGithub(
       user_id: userId,
       tenant_slug: input.tenantSlug,
       app_slug: input.appSlug,
+      app_id: input.appId,
       installation_id: input.installationId,
       private_key_reference: input.privateKeyReference,
       webhook_secret_reference: input.webhookSecretReference,

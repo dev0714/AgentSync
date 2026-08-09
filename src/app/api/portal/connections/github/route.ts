@@ -33,6 +33,7 @@ export async function POST(request: NextRequest) {
   const result = await connectGithub(user.id, {
     tenantSlug: String(b.tenant_slug ?? ''),
     appSlug: String(b.app_slug ?? ''),
+    appId: Number(b.app_id ?? 0),
     installationId: Number(b.installation_id ?? 0),
     privateKeyReference: String(b.private_key_reference ?? ''),
     webhookSecretReference: String(b.webhook_secret_reference ?? ''),

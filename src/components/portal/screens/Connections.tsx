@@ -59,59 +59,177 @@ function Missing({ what }: { what: string }) {
  * How to connect GitHub, in the app rather than in a document nobody has open.
  *
  * AgentSync does not yet perform the GitHub App handshake, so the parts that
- * must happen on github.com are spelled out here rather than hidden behind a
- * button that would do nothing. The last step says plainly what connecting does
- * and does not achieve today.
+ * must happen on github.com are spelled out field by field — including the ones
+ * whose right answer is "leave it empty", which are the easiest to get wrong.
+ * The last step says plainly what connecting does and does not achieve today.
  */
+
+function Setting({
+  name,
+  value,
+  why,
+}: {
+  name: string;
+  value: string;
+  why: string;
+}) {
+  return (
+    <div className="grid grid-cols-1 gap-x-3 gap-y-0.5 border-b border-line-faint py-1.5 last:border-b-0 sm:grid-cols-[190px_130px_1fr]">
+      <div className="mono text-[11px] text-ink-2">{name}</div>
+      <div className="mono text-[11px] text-accent">{value}</div>
+      <div className="text-[11.5px] text-muted-2" style={{ lineHeight: 1.5 }}>
+        {why}
+      </div>
+    </div>
+  );
+}
+
 function githubSteps(): SetupStep[] {
   return [
     {
-      title: 'Create a GitHub App',
+      title: 'Create the App — the fields on the first form',
       body: (
-        <>
-          Under <span className="mono text-ink-3">Settings → Developer settings → GitHub Apps → New</span>.
-          Grant the least it can work with: <span className="mono text-ink-3">Contents</span> read
-          and write, <span className="mono text-ink-3">Pull requests</span> read and write,{' '}
-          <span className="mono text-ink-3">Metadata</span> read,{' '}
-          <span className="mono text-ink-3">Checks</span> read. Subscribe to the{' '}
-          <span className="mono text-ink-3">push</span>,{' '}
-          <span className="mono text-ink-3">pull_request</span> and{' '}
-          <span className="mono text-ink-3">check_suite</span> events. Do not grant
-          administration or workflow scopes — the pipeline never needs them, and a
-          task that tries is meant to fail.
-        </>
+        <div className="flex flex-col gap-3">
+          <div>
+            Most of this form is for Apps that sign users in. AgentSync does not: it
+            acts as the App itself, using an installation token. So several required-
+            looking fields are deliberately left empty.
+          </div>
+          <div className="rounded-lg border border-line bg-raised px-3.5 py-2">
+            <Setting
+              name="GitHub App name"
+              value="anything"
+              why="Must be unique across GitHub. The URL slug it produces is what goes in app_slug below — “Agent sync” becomes agent-sync."
+            />
+            <Setting
+              name="Homepage URL"
+              value="your portal URL"
+              why="Required by GitHub but unused by the pipeline. Your deployed portal, or the repository URL, is fine."
+            />
+            <Setting
+              name="Callback URL"
+              value="Delete it"
+              why="Only used when an App signs users in. AgentSync never does, so leave none."
+            />
+            <Setting
+              name="Request user authorization"
+              value="unchecked"
+              why="Same reason — no user OAuth flow."
+            />
+            <Setting
+              name="Enable Device Flow"
+              value="unchecked"
+              why="Not used."
+            />
+            <Setting
+              name="Setup URL"
+              value="empty"
+              why="There is no post-install page to send you to yet."
+            />
+            <Setting
+              name="Webhook → Active"
+              value="UNCHECK"
+              why="Nothing here receives GitHub events yet. Unchecking it removes the required Webhook URL and the secret. Switch it on when webhook handling exists."
+            />
+            <Setting
+              name="Where can this be installed"
+              value="Only on this account"
+              why="Correct unless you intend to offer AgentSync to other GitHub accounts."
+            />
+          </div>
+        </div>
       ),
-      href: { label: 'github.com/settings/apps/new', url: 'https://github.com/settings/apps/new' },
+      href: {
+        label: 'github.com/settings/apps/new',
+        url: 'https://github.com/settings/apps/new',
+      },
     },
     {
-      title: 'Generate a private key and a webhook secret',
+      title: 'Permissions — grant only these',
       body: (
-        <>
-          Download the <span className="mono text-ink-3">.pem</span> and set a webhook
-          secret on the same page. Neither value is stored in this database — only a
-          reference to where it lives is. Put the real values in your deployment
-          environment.
-        </>
+        <div className="flex flex-col gap-3">
+          <div>
+            Under <span className="mono text-ink-3">Repository permissions</span>. Everything
+            not listed stays <span className="mono text-ink-3">No access</span>. The
+            allowlist you set below bounds <em>which</em> repositories; this bounds{' '}
+            <em>what</em> can be done inside them.
+          </div>
+          <div className="rounded-lg border border-line bg-raised px-3.5 py-2">
+            <Setting
+              name="Contents"
+              value="Read and write"
+              why="Clone the repository and push the task's branch."
+            />
+            <Setting
+              name="Pull requests"
+              value="Read and write"
+              why="Open the pull request and write its body."
+            />
+            <Setting
+              name="Metadata"
+              value="Read-only"
+              why="Mandatory; GitHub selects it for you."
+            />
+            <Setting
+              name="Checks"
+              value="Read-only"
+              why="Read CI results rather than trusting the agent's own account of them."
+            />
+            <Setting
+              name="Administration"
+              value="No access"
+              why="Would let a task change branch protection — the thing the merge gate depends on."
+            />
+            <Setting
+              name="Workflows"
+              value="No access"
+              why="Would let a task rewrite CI, which is what verifies the task."
+            />
+          </div>
+          <div>
+            Organization and Account permissions: none. Leave{' '}
+            <span className="mono text-ink-3">Subscribe to events</span> empty — with the
+            webhook switched off, nothing would be delivered anyway.
+          </div>
+        </div>
       ),
-      code: `GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n…"\nGITHUB_WEBHOOK_SECRET="…"`,
     },
     {
-      title: 'Install the App on the repositories it may touch',
+      title: 'Create it, then note two things and generate a key',
       body: (
         <>
-          Install it, choosing <em>only select repositories</em>. The URL you land on
-          ends in <span className="mono text-ink-3">installations/&lt;id&gt;</span> — that
-          number is the installation id for the next step.
+          On the App&apos;s settings page, copy the{' '}
+          <span className="mono text-ink-3">App ID</span> — a number near the top, and
+          not the same as the installation id. Then scroll to{' '}
+          <span className="mono text-ink-3">Private keys</span> and generate one; the{' '}
+          <span className="mono text-ink-3">.pem</span> downloads once and cannot be
+          retrieved again. Put its contents in your deployment environment. It is never
+          stored in this database — only the name of the variable holding it.
+        </>
+      ),
+      code: `# Vercel → Settings → Environment Variables (paste the whole .pem, newlines and all)
+GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----
+…
+-----END RSA PRIVATE KEY-----"`,
+    },
+    {
+      title: 'Install it on the repositories it may touch',
+      body: (
+        <>
+          <span className="mono text-ink-3">Install App</span> in the left sidebar, and
+          choose <em>Only select repositories</em>. The URL you land on ends in{' '}
+          <span className="mono text-ink-3">installations/12345678</span> — that number
+          is the installation id, and it is a different number from the App ID.
         </>
       ),
     },
     {
-      title: 'Record the installation below',
+      title: 'Record it below',
       body: (
         <>
-          Fill in the form under these steps. The private key and webhook secret are
-          not fields — only the names of the environment variables holding them, so
-          the row can be read back into this page without ever carrying a credential.
+          Fill in the form under these steps and save. Leave{' '}
+          <span className="mono text-ink-3">webhook_secret_reference</span> empty while
+          the webhook is switched off.
         </>
       ),
     },

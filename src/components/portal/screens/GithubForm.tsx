@@ -18,8 +18,11 @@ const MESSAGES: Record<string, string> = {
     'Your role cannot change connections for this tenant. A tenant admin can.',
   NO_SUCH_TENANT: 'That tenant no longer exists.',
   APP_SLUG_REQUIRED: 'The app slug is required.',
+  APP_ID_REQUIRED: 'The App ID is required — the number on the App\u2019s settings page.',
+  APP_ID_EQUALS_INSTALLATION_ID:
+    'The App ID and the installation id are different numbers. The App ID is on the App\u2019s settings page; the installation id is in the install URL.',
   INSTALLATION_ID_REQUIRED: 'The installation id must be the number from the install URL.',
-  SECRET_REFERENCE_REQUIRED: 'Both secret references are required.',
+  SECRET_REFERENCE_REQUIRED: 'The private key reference is required.',
   SECRET_VALUE_NOT_A_REFERENCE:
     'That looks like the secret itself. Store the key in your environment and put its name here, for example env:GITHUB_APP_PRIVATE_KEY.',
   TOKEN_TTL_OUT_OF_RANGE: 'Token lifetime must be between 5 and 60 minutes.',
@@ -59,6 +62,9 @@ export default function GithubForm({
 }) {
   const router = useRouter();
   const [appSlug, setAppSlug] = useState(String(existing?.app_slug ?? ''));
+  const [appId, setAppId] = useState(
+    existing?.app_id ? String(existing.app_id) : '',
+  );
   const [installationId, setInstallationId] = useState(
     existing?.installation_id ? String(existing.installation_id) : '',
   );
@@ -66,7 +72,7 @@ export default function GithubForm({
     String(existing?.private_key_reference ?? 'env:GITHUB_APP_PRIVATE_KEY'),
   );
   const [hookRef, setHookRef] = useState(
-    String(existing?.webhook_secret_reference ?? 'env:GITHUB_WEBHOOK_SECRET'),
+    String(existing?.webhook_secret_reference ?? ''),
   );
   const [repos, setRepos] = useState(
     ((existing?.repository_allowlist as string[] | undefined) ?? []).join('\n'),
@@ -91,6 +97,7 @@ export default function GithubForm({
       body: JSON.stringify({
         tenant_slug: tenantSlug,
         app_slug: appSlug,
+        app_id: Number(appId),
         installation_id: Number(installationId),
         private_key_reference: keyRef,
         webhook_secret_reference: hookRef,
@@ -136,12 +143,28 @@ export default function GithubForm({
   return (
     <form onSubmit={save} className="flex flex-col gap-4">
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Field label="app_slug" hint="From the App's URL: github.com/apps/<slug>.">
+        <Field
+          label="app_slug"
+          hint="The URL form of the name, not the display name: github.com/apps/<slug>. “Agent sync” becomes agent-sync."
+        >
           <input
             className="field-input"
             value={appSlug}
             onChange={(e) => setAppSlug(e.target.value)}
-            placeholder="agentsync"
+            placeholder="agent-sync"
+            required
+          />
+        </Field>
+        <Field
+          label="app_id"
+          hint="App ID on the App’s settings page. This is what signs the JWT that mints an installation token — not the slug, and not the installation id."
+        >
+          <input
+            className="field-input"
+            value={appId}
+            onChange={(e) => setAppId(e.target.value.replace(/\D/g, ''))}
+            inputMode="numeric"
+            placeholder="1234567"
             required
           />
         </Field>
@@ -171,13 +194,13 @@ export default function GithubForm({
         </Field>
         <Field
           label="webhook_secret_reference"
-          hint="Likewise a name, not the secret."
+          hint="Optional. Leave empty while the App's webhook is switched off — nothing here receives GitHub events yet, so there is no secret to name."
         >
           <input
             className="field-input"
             value={hookRef}
             onChange={(e) => setHookRef(e.target.value)}
-            required
+            placeholder="env:GITHUB_WEBHOOK_SECRET"
           />
         </Field>
       </div>
