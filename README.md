@@ -45,12 +45,55 @@ src/
     agents.ts             agent definitions, prompts, tool grants, limits, runs
 ```
 
+## Database
+
+The schema lives in `supabase/migrations/` and installs everything under a
+dedicated `agentsync` schema:
+
+| Migration                             | What it does                                                                                             |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `0001_agentsync_schema.sql`           | 27 tables, enums, `updated_at` triggers, row-level security (45 policies) and role grants.                 |
+| `0002_agentsync_default_agents.sql`   | The seven platform-default agent definitions with prompts, model routing and tool grants.                  |
+
+Apply it with the Supabase CLI:
+
+```bash
+supabase link --project-ref <project-ref>
+supabase db push
+```
+
+…or paste each file into the SQL editor in order.
+
+Then expose the schema to the Data API: **Project Settings → API → Exposed
+schemas** must include `agentsync`, and `src/lib/supabase.ts` pins every query
+to it.
+
+### Isolation model
+
+- Every tenant-scoped table carries `tenant_id`, has RLS enabled **and forced**,
+  and resolves membership through `agentsync.tenant_users` against `auth.uid()`.
+- `agentsync.is_member()`, `has_role()` and `can_configure()` are `SECURITY
+  DEFINER` helpers so policies don't recurse through `tenant_users`.
+- Task records are read-only to the portal — workers write them with the service
+  role. Approvals are the one task-side row a human writes, restricted to
+  `SUPER_ADMIN`, `TENANT_ADMIN` and `APPROVER`.
+- `task_events` is append-only: INSERT and SELECT policies only, no UPDATE or
+  DELETE privilege for `authenticated`, plus a trigger that raises on either.
+- `agent_tasks` is unique on `(tenant_id, idempotency_key)`, so a retry can
+  never produce a second branch, pull request, deployment or callback.
+
+The migrations were verified against a local PostgreSQL instance with the
+Supabase auth stubs: both apply cleanly, cross-tenant reads return nothing, a
+`VIEWER` write matches zero rows, forged events are rejected by policy, event
+rewrites and deletes are denied, and a duplicate idempotency key is refused.
+
 ## Data
 
-Every screen reads from `src/data/*`. Each configuration group carries the
-Supabase table it maps to (`project_repositories`, `agent_definitions`,
-`tenants.settings`, …), so wiring the portal to a real backend means replacing
-the fixture module behind each screen rather than reshaping the components.
+Every screen currently reads fixtures from `src/data/*`. Each configuration
+group carries the Supabase table it maps to (`project_repositories`,
+`agent_definitions`, `tenants.settings`, …), so wiring a screen to the database
+means swapping the fixture import for a query — the component shapes already
+match the tables.
 
 Configuration fields are editable in the browser: `FieldProvider` holds edits for
 the session keyed by `<group>|<field>`, so switching tabs or screens does not
