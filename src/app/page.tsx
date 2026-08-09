@@ -72,21 +72,30 @@ export default function Home() {
             BY LEADSYNC
           </div>
           <div className="flex-1" />
-          <nav className="hidden items-center gap-[26px] md:flex">
-            {[
-              ['#how', 'How it works'],
-              ['#guardrails', 'Guardrails'],
-              ['#config', 'Configuration'],
-              ['#rollout', 'Rollout'],
-            ].map(([href, label]) => (
-              <a
-                key={href}
-                href={href}
-                className="text-[13.5px] text-muted no-underline hover:text-ink hover:no-underline"
-              >
-                {label}
-              </a>
-            ))}
+          <nav className="flex items-center gap-5 sm:gap-[26px]">
+            <div className="hidden items-center gap-[26px] lg:flex">
+              {[
+                ['#how', 'How it works'],
+                ['#guardrails', 'Guardrails'],
+                ['#config', 'Configuration'],
+                ['#rollout', 'Rollout'],
+              ].map(([href, label]) => (
+                <a
+                  key={href}
+                  href={href}
+                  className="text-[13.5px] text-muted no-underline hover:text-ink hover:no-underline"
+                >
+                  {label}
+                </a>
+              ))}
+            </div>
+            {/* Existing customers land here; the portal redirects to it anyway. */}
+            <Link
+              href="/login"
+              className="text-[13.5px] font-medium text-muted no-underline hover:text-ink hover:no-underline"
+            >
+              Sign in
+            </Link>
             <button className="cursor-pointer rounded-lg bg-ink px-4 py-2 text-[13px] font-semibold text-canvas hover:bg-white">
               Request access
             </button>
