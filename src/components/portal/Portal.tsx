@@ -60,11 +60,21 @@ const CRUMBS: Record<Screen, string> = {
   tenants: 'tenants · tenant_users · rls policies',
 };
 
-export default function Portal() {
+export type PortalUser = {
+  name: string;
+  role: string;
+  email: string | null;
+  /** Tenants this account belongs to; drives the tenant switcher. */
+  tenants: { name: string; slug: string }[];
+};
+
+export default function Portal({ user }: { user: PortalUser }) {
   const [screen, setScreen] = useState<Screen>('tasks');
   const [filter, setFilter] = useState<FilterKey>('all');
   const [detailTab, setDetailTab] = useState<DetailTab>('plan');
-  const [tenant, setTenant] = useState('Northwind Group');
+  const [tenant, setTenant] = useState(
+    user.tenants[0]?.name ?? 'Northwind Group',
+  );
   const [connTab, setConnTab] = useState<ConnTab>('overview');
   const [agentKey, setAgentKey] = useState('engineer');
   const [agentTab, setAgentTab] = useState<AgentTab>('setup');
@@ -91,6 +101,7 @@ export default function Portal() {
           tenant={tenant}
           onTenant={setTenant}
           pendingCount={pendingCount}
+          user={user}
         />
 
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">

@@ -1,8 +1,9 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import type { Screen } from './Portal';
+import type { PortalUser, Screen } from './Portal';
 
 const NAV: { group: string; items: { n: string; k: Screen; label: string }[] }[] =
   [
@@ -31,12 +32,21 @@ const NAV: { group: string; items: { n: string; k: Screen; label: string }[] }[]
     },
   ];
 
-const TENANT_LIST = [
+/** Fallback list until the tenant screens read from the database. */
+const DEMO_TENANTS = [
   { name: 'Northwind Group', projects: '6 projects' },
   { name: 'Meridian Health', projects: '3 projects' },
   { name: 'Cape Logistics', projects: '2 projects' },
   { name: 'Internal · AgentSync', projects: '1 project' },
 ];
+
+/** Two-letter monogram from a display name: "Andre Dharmalingam" → "AD". */
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '··';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
 
 export default function Sidebar({
   screen,
@@ -44,14 +54,29 @@ export default function Sidebar({
   tenant,
   onTenant,
   pendingCount,
+  user,
 }: {
   screen: Screen;
   onNavigate: (s: Screen) => void;
   tenant: string;
   onTenant: (t: string) => void;
   pendingCount: number;
+  user: PortalUser;
 }) {
   const [open, setOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const router = useRouter();
+
+  // Clears the session cookie, then returns to the sign-in screen.
+  async function signOut() {
+    setSigningOut(true);
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } finally {
+      router.replace('/login');
+      router.refresh();
+    }
+  }
 
   const isActive = (k: Screen) =>
     screen === k || (k === 'tasks' && screen === 'detail');
@@ -105,7 +130,10 @@ export default function Sidebar({
         </button>
         {open ? (
           <div className="mt-1.5 flex flex-col gap-px rounded-[7px] border border-[#2A2A2F] bg-raised p-1">
-            {TENANT_LIST.map((t) => (
+            {(user.tenants.length
+              ? user.tenants.map((t) => ({ name: t.name, projects: t.slug }))
+              : DEMO_TENANTS
+            ).map((t) => (
               <button
                 key={t.name}
                 onClick={() => {
@@ -174,15 +202,41 @@ export default function Sidebar({
       </nav>
 
       <div className="flex items-center gap-[9px] border-t border-line p-3">
-        <div className="flex size-[26px] items-center justify-center rounded-full bg-accent text-[10px] font-semibold text-canvas">
-          AB
+        <div className="flex size-[26px] shrink-0 items-center justify-center rounded-full bg-accent text-[10px] font-semibold text-canvas">
+          {initials(user.name)}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-xs font-medium text-ink-2">Andre B.</div>
-          <div className="mono text-muted-2" style={{ fontSize: 9.5 }}>
-            SUPER_ADMIN
+          <div className="truncate text-xs font-medium text-ink-2">
+            {user.name}
+          </div>
+          <div className="mono truncate text-muted-2" style={{ fontSize: 9.5 }}>
+            {user.role}
           </div>
         </div>
+        <button
+          onClick={signOut}
+          disabled={signingOut}
+          title="Sign out"
+          aria-label="Sign out"
+          className="flex size-[26px] shrink-0 cursor-pointer items-center justify-center rounded-md border border-line text-muted-2 hover:border-[#452020] hover:bg-[#2A1512] hover:text-danger disabled:cursor-default disabled:opacity-50"
+        >
+          {/* door with an outbound arrow */}
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M6 14H3.5A1.5 1.5 0 0 1 2 12.5v-9A1.5 1.5 0 0 1 3.5 2H6" />
+            <path d="M10.5 11 14 8l-3.5-3" />
+            <path d="M14 8H6" />
+          </svg>
+        </button>
       </div>
     </div>
   );
