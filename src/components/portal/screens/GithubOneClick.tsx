@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
 
 /**
  * "Connect GitHub" in one click, via GitHub's App manifest flow.
@@ -13,6 +14,15 @@ export default function GithubOneClick({ tenantSlug }: { tenantSlug: string | nu
   const [org, setOrg] = useState('');
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<React.ReactNode>(null);
+  const [unfinished, setUnfinished] = useState<Unfinished[]>([]);
+
+  useEffect(() => {
+    if (!tenantSlug) return;
+    fetch(`/api/portal/connections/github/finish?tenant=${encodeURIComponent(tenantSlug)}`)
+      .then((r) => (r.ok ? r.json() : { apps: [] }))
+      .then((d: { apps: Unfinished[] }) => setUnfinished(d.apps ?? []))
+      .catch(() => undefined);
+  }, [tenantSlug]);
 
   async function start() {
     if (!tenantSlug) return;
@@ -60,6 +70,9 @@ export default function GithubOneClick({ tenantSlug }: { tenantSlug: string | nu
 
   return (
     <div className="flex flex-col gap-4">
+      {unfinished.map((app) => (
+        <FinishConnecting key={app.key_ref} app={app} />
+      ))}
       <ol className="flex flex-col gap-1.5 text-[14px] text-ink-3" style={{ lineHeight: 1.55 }}>
         <li>1. GitHub opens with the AgentSync App already filled in — click <strong>Create GitHub App</strong>.</li>
         <li>2. Choose the repositories the agents may work on, and install.</li>
@@ -87,6 +100,83 @@ export default function GithubOneClick({ tenantSlug }: { tenantSlug: string | nu
         The App gets read &amp; write access to code and pull requests, and read access to checks and
         Actions logs — nothing else. Its private key is stored encrypted; merges still need a person&apos;s approval here.
       </div>
+    </div>
+  );
+}
+
+type Unfinished = { app_slug: string; app_id: number | null; key_ref: string };
+
+const FINISH_ERRORS: Record<string, string> = {
+  APP_ID_REQUIRED: 'Enter the App ID.',
+  APP_ID_MISMATCH: 'That App ID does not belong to this App.',
+  NOT_INSTALLED: 'The App is not installed yet — install it on GitHub first.',
+  NO_REPOSITORIES: 'The App is installed but no repository is selected on GitHub.',
+  GITHUB_UNREACHABLE: 'Could not reach GitHub. Try again.',
+};
+
+/**
+ * An App created through the one-click flow whose last step did not finish.
+ * GitHub is asked which installation and repositories it has; older Apps also
+ * need their App ID, which is checked against the stored key.
+ */
+function FinishConnecting({ app }: { app: Unfinished }) {
+  const router = useRouter();
+  const [appId, setAppId] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  async function finish() {
+    setBusy(true);
+    setProblem(null);
+    try {
+      const res = await fetch('/api/portal/connections/github/finish', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ key_ref: app.key_ref, app_id: appId ? Number(appId) : undefined }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string; detail?: string };
+      if (!res.ok) {
+        setProblem(FINISH_ERRORS[data.error ?? ''] ?? data.detail ?? `Could not finish (${data.error ?? res.status}).`);
+        return;
+      }
+      router.refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-3 rounded-[14px] border border-[#F0C9A8] bg-gate-tint p-4">
+      <div className="text-[14.5px] font-semibold text-gate-ink">
+        Finish connecting <span className="mono">{app.app_slug}</span>
+      </div>
+      <div className="text-[13.5px] text-ink-3" style={{ lineHeight: 1.55 }}>
+        This App was created and its key is stored, but the connection was not recorded.
+        {app.app_id ? ' Finish it here — no need to create another App.' : (
+          <>
+            {' '}Enter its <strong>App ID</strong> — the number near the top of{' '}
+            <a href={`https://github.com/settings/apps/${app.app_slug}`} target="_blank" rel="noreferrer noopener">
+              the App&apos;s settings page
+            </a>{' '}
+            (for an organisation App, under the organisation&apos;s Developer settings).
+          </>
+        )}
+      </div>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+        {app.app_id ? null : (
+          <input
+            className="field-input mono sm:w-[200px]"
+            inputMode="numeric"
+            placeholder="App ID, e.g. 1234567"
+            value={appId}
+            onChange={(e) => setAppId(e.target.value.replace(/\D/g, ''))}
+          />
+        )}
+        <button className="btn-gate" onClick={finish} disabled={busy || (!app.app_id && !appId)}>
+          {busy ? 'Finishing…' : 'Finish connecting'}
+        </button>
+      </div>
+      {problem ? <div className="text-[13.5px] text-danger-ink">{problem}</div> : null}
     </div>
   );
 }

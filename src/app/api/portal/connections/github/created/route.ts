@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
   const { data, error } = await serviceClient().rpc('agentsync_store_secret', {
     p_user_id: user.id,
     p_tenant_slug: pending.tenant_slug,
-    p_purpose: `github_app:${app.slug}`,
+    p_purpose: `github_app:${app.slug}#${app.id}`,
     p_ciphertext: sealed.ciphertext,
     p_iv: sealed.iv,
     p_tag: sealed.tag,
