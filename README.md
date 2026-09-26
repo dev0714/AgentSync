@@ -375,6 +375,14 @@ and referenced as `db:<id>`; the encryption key lives only in the deployment as
 carried through GitHub's redirects is signed and bound to the person who
 started it.
 
+**Each repository is a project.** Connecting GitHub creates one project per
+repository the App is installed on (plan and merge approval on; workflows,
+`.env*` and keys protected). Adding or removing repositories on GitHub and
+returning through its redirect — or pressing *Sync from GitHub* on the Projects
+screen — keeps them in step: new repositories get projects, removed ones have
+their project disabled (history kept), and returning ones are re-enabled. A
+task names its project by the Project ID shown on that screen.
+
 **By hand.** **What the App needs.** Repository permissions: Contents (read & write), Pull
 requests (read & write), Checks (read), Actions (read), Metadata (read). Put the
 private key in a Vercel environment variable (for example

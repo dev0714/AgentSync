@@ -100,7 +100,11 @@ export default function Portal({
         text:
           q.get("github_connected") === "updated"
             ? "GitHub installation updated."
-            : "GitHub is connected. The agents can now read, branch and open pull requests on the repositories you picked.",
+            : `GitHub is connected. ${
+                Number(q.get("projects")) > 0
+                  ? `${q.get("projects")} project${q.get("projects") === "1" ? "" : "s"} created — one per repository you picked.`
+                  : "Each repository you picked is a project."
+              }`,
       });
     } else if (q.get("github_error")) {
       setNotice({
@@ -111,6 +115,8 @@ export default function Portal({
     q.delete("screen");
     q.delete("github_connected");
     q.delete("github_error");
+    q.delete("projects");
+    q.delete("disabled");
     const rest = q.toString();
     window.history.replaceState(null, "", `/portal${rest ? `?${rest}` : ""}`);
   }, []);
@@ -237,6 +243,11 @@ export default function Portal({
               <Project
                 projects={data.projects}
                 tenantSlug={data.tenant?.slug ?? null}
+                github={data.connections.github}
+                onConnect={() => {
+                  setScreen("connections");
+                  setConnTab("github");
+                }}
                 selected={projectId}
                 onSelect={setProjectId}
                 group={projectGroup}

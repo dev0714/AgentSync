@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
       keyRef: app.key_ref,
     });
     if (!result.ok) return NextResponse.json(result, { status: 422 });
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, projects: result.projects });
   } catch (e) {
     console.error('finish GitHub connection failed', e);
     return NextResponse.json({ error: 'GITHUB_UNREACHABLE' }, { status: 502 });

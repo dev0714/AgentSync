@@ -14,9 +14,10 @@ import {
   swatch,
   type Row,
 } from '@/lib/portal-ui';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { Ago, Bar, ColLabel, FieldRows, Pill, TableCard, Tabs } from '../ui';
-import { IssueKeyForm, NewProjectForm } from './SetupForms';
+import { IssueKeyForm } from './SetupForms';
 
 function SetupCard({ title, detail, children }: { title: string; detail: string; children: React.ReactNode }) {
   return (
@@ -82,26 +83,89 @@ export function Project_({
   group,
   onGroup,
   tenantSlug,
+  github,
+  onConnect,
 }: {
   tenantSlug: string | null;
+  /** The tenant's GitHub connection, or null. */
+  github: Record<string, unknown> | null;
+  /** Opens Connections → GitHub. */
+  onConnect: () => void;
   projects: ProjectRecord[];
   selected: string | null;
   onSelect: (id: string) => void;
   group: number;
   onGroup: (i: number) => void;
 }) {
-  const [adding, setAdding] = useState(false);
+  const router = useRouter();
+  const [syncing, setSyncing] = useState(false);
+  const [syncNote, setSyncNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const appSlug = typeof github?.app_slug === 'string' ? github.app_slug : null;
 
-  if (projects.length === 0 || adding) {
-    return (
+  async function sync() {
+    setSyncing(true);
+    setSyncNote(null);
+    try {
+      const res = await fetch('/api/portal/projects/sync', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ tenant_slug: tenantSlug }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        detail?: string;
+        projects?: { created: number; enabled: number; disabled: number };
+      };
+      if (!res.ok || !data.projects) {
+        setSyncNote({ ok: false, text: data.detail ?? `Could not sync (${data.error ?? res.status}).` });
+        return;
+      }
+      const { created, enabled, disabled } = data.projects;
+      const parts = [
+        created ? `${created} new` : '',
+        enabled ? `${enabled} re-enabled` : '',
+        disabled ? `${disabled} disabled (removed from GitHub)` : '',
+      ].filter(Boolean);
+      setSyncNote({ ok: true, text: parts.length ? `Projects synced: ${parts.join(', ')}.` : 'Projects already match your repositories.' });
+      router.refresh();
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  const manage = appSlug ? (
+    <a
+      className="btn"
+      href={`https://github.com/apps/${appSlug}/installations/new`}
+      target="_blank"
+      rel="noreferrer noopener"
+    >
+      Add or remove repositories ↗
+    </a>
+  ) : null;
+
+  if (projects.length === 0) {
+    return github ? (
       <SetupCard
-        title={projects.length === 0 ? 'Create your first project' : 'New project'}
-        detail="A project points the agents at one GitHub repository and sets its approval gates. Every submitted task names a project."
+        title="No repositories yet"
+        detail="Each repository the AgentSync GitHub App is installed on becomes a project. Add repositories on GitHub, then sync."
       >
-        <NewProjectForm tenantSlug={tenantSlug} />
-        {adding ? (
-          <button className="btn w-fit" onClick={() => setAdding(false)}>Back to projects</button>
+        <div className="flex flex-wrap gap-2">
+          {manage}
+          <button className="btn-primary" onClick={sync} disabled={syncing}>
+            {syncing ? 'Syncing…' : 'Sync from GitHub'}
+          </button>
+        </div>
+        {syncNote ? (
+          <div className={`text-[13.5px] ${syncNote.ok ? 'text-ok-ink' : 'text-danger-ink'}`}>{syncNote.text}</div>
         ) : null}
+      </SetupCard>
+    ) : (
+      <SetupCard
+        title="Connect GitHub to create projects"
+        detail="Each repository you install the AgentSync GitHub App on becomes a project automatically, with plan and merge approval switched on."
+      >
+        <button className="btn-primary w-fit" onClick={onConnect}>Connect GitHub</button>
       </SetupCard>
     );
   }
@@ -125,7 +189,10 @@ export function Project_({
           >
             {projects.map((p) => (
               <option key={p.id} value={p.id}>
-                {p.name}
+                {p.repository?.github_owner
+                  ? `${p.repository.github_owner}/${p.repository.repository}`
+                  : p.name}
+                {p.enabled ? '' : ' (disabled)'}
               </option>
             ))}
           </select>
@@ -134,15 +201,28 @@ export function Project_({
             {project.name}
           </div>
         )}
-        <button className="btn ml-auto" onClick={() => setAdding(true)}>New project</button>
         <Pill c={project.enabled ? ['#DDEFE3', '#17603C'] : ['#F0ECE3', '#5B5D66']}>
-          {project.enabled ? 'ACTIVE' : 'DISABLED'}
+          {project.enabled ? 'Active' : 'Disabled — not in the GitHub installation'}
         </Pill>
         <span className="mono text-[12.5px] text-muted-2">
           {project.repository?.github_owner && project.repository?.repository
             ? `${project.repository.github_owner}/${project.repository.repository}`
             : project.slug}
         </span>
+        <div className="ml-auto flex flex-wrap gap-2">
+          {manage}
+          {github ? (
+            <button className="btn" onClick={sync} disabled={syncing}>
+              {syncing ? 'Syncing…' : 'Sync from GitHub'}
+            </button>
+          ) : null}
+        </div>
+      </div>
+      {syncNote ? (
+        <div className={`text-[13.5px] ${syncNote.ok ? 'text-ok-ink' : 'text-danger-ink'}`}>{syncNote.text}</div>
+      ) : null}
+      <div className="text-[13px] text-muted-2">
+        Project ID for submissions: <span className="mono select-all text-ink-2">{project.id}</span>
       </div>
 
       <div className="card overflow-hidden">

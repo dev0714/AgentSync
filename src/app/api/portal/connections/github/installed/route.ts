@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
         installationId,
       });
       return result.ok
-        ? to(request, 'github_connected=1', true)
+        ? to(request, `github_connected=1&projects=${result.projects.created}`, true)
         : fail(request, result.detail ?? `Could not record the connection (${result.error}).`);
     }
 
@@ -63,7 +63,7 @@ export async function GET(request: NextRequest) {
           installationId,
         });
         return result.ok
-          ? to(request, 'github_connected=updated', true)
+          ? to(request, `github_connected=updated&projects=${result.projects.created}&disabled=${result.projects.disabled}`, true)
           : fail(request, result.detail ?? `Could not update the connection (${result.error}).`);
       }
     }
