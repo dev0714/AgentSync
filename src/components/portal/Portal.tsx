@@ -91,6 +91,16 @@ export default function Portal({
   // Coming back from GitHub's App flow lands on /portal?screen=connections&…
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
+    // Links from a source system (a ticket's note) open the task directly.
+    const linked = q.get("task");
+    if (linked && /^[0-9a-f-]{36}$/i.test(linked)) {
+      setTaskId(linked);
+      setScreen("detail");
+      q.delete("task");
+      const rest = q.toString();
+      window.history.replaceState(null, "", `/portal${rest ? `?${rest}` : ""}`);
+      return;
+    }
     if (q.get("screen") !== "connections") return;
     setScreen("connections");
     setConnTab("github");

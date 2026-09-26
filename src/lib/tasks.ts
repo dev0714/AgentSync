@@ -27,7 +27,14 @@ export type RequestType = (typeof REQUEST_TYPES)[number];
 export type Priority = (typeof PRIORITIES)[number];
 
 export type SubmitRequest = {
-  project_id: string;
+  /** The project to work in — or leave it out and send `client` instead. */
+  project_id?: string;
+  /**
+   * The source system's own client. AgentSync routes the task to the project
+   * this client is mapped to on the Source systems screen; an unmapped client
+   * is recorded for mapping and the task is refused with CLIENT_NOT_MAPPED.
+   */
+  client?: { id: string; name?: string };
   idempotency_key: string;
   title: string;
   description?: string;
@@ -47,6 +54,7 @@ export type SubmitError =
   | 'RATE_LIMITED'
   | 'PROJECT_DISABLED'
   | 'PROJECT_NOT_FOUND'
+  | 'CLIENT_NOT_MAPPED'
   | 'VALIDATION_FAILED'
   | 'INTERNAL_ERROR';
 
@@ -73,8 +81,23 @@ export function validateSubmission(body: unknown): string[] {
   if (typeof body !== 'object' || body === null) return ['body must be an object'];
   const b = body as Record<string, unknown>;
 
-  if (typeof b.project_id !== 'string' || !UUID.test(b.project_id)) {
-    problems.push('project_id must be a uuid');
+  const client = b.client as { id?: unknown; name?: unknown } | undefined;
+  if (b.project_id !== undefined) {
+    if (typeof b.project_id !== 'string' || !UUID.test(b.project_id)) {
+      problems.push('project_id must be a uuid');
+    }
+  } else if (client === undefined) {
+    problems.push('project_id or client is required');
+  }
+  if (client !== undefined) {
+    if (typeof client !== 'object' || client === null || typeof client.id !== 'string' || !client.id.trim()) {
+      problems.push('client.id is required when client is given');
+    } else if (client.id.length > 200) {
+      problems.push('client.id must be 200 characters or fewer');
+    }
+    if (client && client.name !== undefined && (typeof client.name !== 'string' || client.name.length > 300)) {
+      problems.push('client.name must be a string of 300 characters or fewer');
+    }
   }
   if (typeof b.idempotency_key !== 'string' || b.idempotency_key.length < 1) {
     problems.push('idempotency_key is required');
@@ -136,7 +159,8 @@ export async function submitTask(
     payload: {
       api_key: apiKey,
       ip,
-      project_id: body.project_id,
+      project_id: body.project_id ?? null,
+      client: body.client ? { id: body.client.id, name: body.client.name ?? null } : null,
       idempotency_key: body.idempotency_key,
       title: body.title,
       description: body.description ?? null,
@@ -162,6 +186,13 @@ export async function submitTask(
 
   const result = data as Record<string, unknown>;
   if (result?.ok === false) {
+    if (result.error === 'CLIENT_NOT_MAPPED') {
+      return {
+        ok: false,
+        error: 'CLIENT_NOT_MAPPED',
+        detail: 'This client is not mapped to a repository yet. Map it on the Source systems screen, then send again.',
+      };
+    }
     return { ok: false, error: result.error as SubmitError };
   }
   return {

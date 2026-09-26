@@ -3,7 +3,7 @@ import { currentUser } from '@/lib/auth';
 import { closePullRequest, githubFor } from '@/lib/github';
 import { kickWorker } from '@/lib/kick';
 import { cleanupProviderFiles } from '@/lib/attachments';
-import { aiContext, loadJob } from '@/lib/stages';
+import { aiContext, loadJob, sendCallback } from '@/lib/stages';
 import { serviceClient } from '@/lib/supabase';
 
 /**
@@ -69,6 +69,8 @@ export async function POST(
     try {
       const job = await loadJob(id);
       await cleanupProviderFiles(aiContext(job), id).catch(() => undefined);
+      const why = typeof body.comment === 'string' && body.comment.trim() ? `: ${body.comment.trim()}` : '';
+      await sendCallback(job, 'cancelled', `Rejected in AgentSync${why}`.slice(0, 2000)).catch(() => undefined);
       if (job.task.pull_request_number && job.repository) {
         const repo = {
           owner: job.repository.github_owner,

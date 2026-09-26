@@ -7,7 +7,7 @@ import {
   transitionTask,
 } from './tasks';
 import { cleanupProviderFiles } from './attachments';
-import { STAGES, StageFailed, aiContext, loadJob, logEvent, sendCallback } from './stages';
+import { STAGES, StageFailed, aiContext, callbackEventFor, loadJob, logEvent, sendCallback } from './stages';
 
 /**
  * The worker harness: claim a task, run the stage for its current status,
@@ -77,6 +77,10 @@ export async function tick(workerId: string): Promise<TickResult> {
         });
         result.steps.push({ task_id: taskId, from, to: outcome.to });
         status = outcome.to;
+
+        // Reaching a gate is news for the source system: a plan to approve, a PR to merge.
+        const event = callbackEventFor(outcome.to);
+        if (event) await sendCallback(job, event, outcome.message ?? null).catch(() => undefined);
       } catch (error) {
         const code = error instanceof StageFailed ? error.code
           : (error as { code?: string }).code && typeof (error as { code?: string }).code === 'string'

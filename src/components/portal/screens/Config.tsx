@@ -20,6 +20,7 @@ import { Ago, Bar, ColLabel, FieldRows, Pill, TableCard, Tabs } from '../ui';
 import RequestForm from './RequestForm';
 import { TierPicker, useTierSettings, type EngineerMode, type Tier } from '../tiers';
 import { IssueKeyForm } from './SetupForms';
+import SourceClients from './SourceClients';
 
 function SetupCard({ title, detail, children }: { title: string; detail: string; children: React.ReactNode }) {
   return (
@@ -373,9 +374,11 @@ export { Project_ as Project };
 /* ---- source systems -------------------------------------------------- */
 
 const SRC_GRID =
-  'grid min-w-[900px] grid-cols-[minmax(200px,1fr)_160px_150px_100px_90px_90px] items-center gap-3';
+  'grid min-w-[1000px] grid-cols-[minmax(200px,1fr)_160px_150px_100px_90px_90px_100px] items-center gap-3';
 
 export function Sources({ sources, tenantSlug }: { sources: SourceRow[]; tenantSlug: string | null }) {
+  const [openSource, setOpenSource] = useState<string | null>(sources.length === 1 ? sources[0].id : null);
+  const selected = sources.find((s) => s.id === openSource) ?? null;
   const issue = (
     <SetupCard
       title={sources.length === 0 ? 'Issue your first key' : 'Issue another key'}
@@ -404,6 +407,7 @@ export function Sources({ sources, tenantSlug }: { sources: SourceRow[]; tenantS
           <ColLabel>RATE LIMIT</ColLabel>
           <ColLabel>TASKS</ColLabel>
           <ColLabel right>STATE</ColLabel>
+          <ColLabel right>CLIENTS</ColLabel>
         </div>
         {sources.map((s) => (
           <div
@@ -429,9 +433,21 @@ export function Sources({ sources, tenantSlug }: { sources: SourceRow[]; tenantS
             <div className="text-right">
               <Pill c={swatch(STATE_COLOUR, s.state)}>{s.state}</Pill>
             </div>
+            <div className="text-right">
+              <button
+                className="text-[13.5px] font-medium text-ink underline decoration-line underline-offset-4 hover:decoration-ink"
+                onClick={() => setOpenSource(openSource === s.id ? null : s.id)}
+                aria-expanded={openSource === s.id}
+              >
+                {openSource === s.id ? 'Hide' : 'Map clients'}
+              </button>
+            </div>
           </div>
         ))}
       </TableCard>
+      {selected ? (
+        <SourceClients key={selected.id} sourceId={selected.id} sourceName={selected.name} tenantSlug={tenantSlug} />
+      ) : null}
     </div>
   );
 }

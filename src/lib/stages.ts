@@ -133,7 +133,9 @@ const db = () => serviceClient();
 async function update(job: Job, fields: Row) {
   const { error } = await db().rpc('agentsync_update_task', { p_task_id: job.task.id, p_fields: fields });
   if (error) throw error;
-  if (fields.stage_state) Object.assign(job.task.stage_state, fields.stage_state as Row);
+  const { stage_state, ...rest } = fields;
+  if (stage_state) Object.assign(job.task.stage_state, stage_state as Row);
+  Object.assign(job.task, rest);
 }
 
 export async function logEvent(taskId: string, type: string, message: string, metadata: Row = {}) {
@@ -743,8 +745,13 @@ const REVIEW_SCHEMA = {
         additionalProperties: false,
       },
     },
+    client_note: {
+      type: 'string',
+      description:
+        'Two or three sentences for the person who reported the request, written for a non-technical reader: what was changed and what they will notice. No file names, code or internal detail.',
+    },
   },
-  required: ['verdict', 'summary', 'criteria', 'findings'],
+  required: ['verdict', 'summary', 'criteria', 'findings', 'client_note'],
   additionalProperties: false,
 };
 
@@ -753,6 +760,7 @@ type ReviewOut = {
   summary: string;
   criteria: { criterion: string; met: boolean; evidence: string }[];
   findings: { severity: string; file: string; description: string }[];
+  client_note: string;
 };
 
 async function test(job: Job): Promise<Outcome> {
@@ -830,7 +838,10 @@ async function test(job: Job): Promise<Outcome> {
 
   const { error } = await db().rpc('agentsync_record_review', { p_task_id: job.task.id, p_review: review });
   if (error) throw error;
-  await update(job, { stage_state: { review_summary: review.summary, review_verdict: review.verdict } });
+  await update(job, {
+    client_note: review.client_note?.trim() || null,
+    stage_state: { review_summary: review.summary, review_verdict: review.verdict },
+  });
 
   if (review.verdict === 'reject') throw new StageFailed('REVIEW_REJECTED', review.summary);
   if (review.verdict === 'changes') {
@@ -914,28 +925,70 @@ async function ship(job: Job): Promise<Outcome> {
 
 /* ---- callback to the source system ------------------------------------- */
 
-export async function sendCallback(job: Job, status: string, summary: string | null) {
+/** What a source system hears about, in order. `completed`, `failed` and `cancelled` are final. */
+export type CallbackEvent = 'plan_ready' | 'pr_opened' | 'completed' | 'failed' | 'cancelled';
+
+const EVENT_FOR_STATUS: Record<string, CallbackEvent> = {
+  awaiting_plan_approval: 'plan_ready',
+  awaiting_merge_approval: 'pr_opened',
+};
+
+/** The callback event a move into this status triggers, if any. */
+export function callbackEventFor(status: string): CallbackEvent | null {
+  return EVENT_FOR_STATUS[status] ?? null;
+}
+
+function portalUrl(taskId: string): string | null {
+  const host = process.env.AGENTSYNC_PUBLIC_URL || (process.env.VERCEL_PROJECT_PRODUCTION_URL
+    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : '');
+  return host ? `${host.replace(/\/$/, '')}/portal?task=${taskId}` : null;
+}
+
+/**
+ * Tells the source system what happened, signed with the source's callback
+ * secret (or the project's when the source has none). Best effort: a failed
+ * callback is logged, retried once on a 5xx, and never fails the task.
+ */
+export async function sendCallback(job: Job, event: CallbackEvent, summary: string | null) {
   const url = job.task.callback_url;
   if (!url) return;
+  const { data } = await db().rpc('agentsync_callback_context', { p_task_id: job.task.id });
+  const extra = (data ?? {}) as { source_secret_ref?: string | null; client_note?: string | null; plan_summary?: string | null };
+
   const body = JSON.stringify({
+    event,
     task_id: job.task.id,
     correlation_id: job.task.correlation_id,
     external_reference: job.task.external_reference,
-    status,
+    title: job.task.title,
+    status: event === 'plan_ready' ? 'awaiting_plan_approval' : event === 'pr_opened' ? 'awaiting_merge_approval' : event,
     summary,
+    plan_summary: extra.plan_summary ?? job.plan?.summary ?? null,
+    client_note: event === 'completed' ? extra.client_note ?? null : null,
     pull_request_url: job.task.pull_request_url,
     commit_sha: job.task.commit_sha,
+    portal_url: portalUrl(job.task.id),
     sent_at: new Date().toISOString(),
   });
-  const headers: Record<string, string> = { 'content-type': 'application/json', 'user-agent': 'agentsync' };
-  const secret = await optionalSecret(job.project.callback_signing_secret_ref);
+  const headers: Record<string, string> = {
+    'content-type': 'application/json',
+    'user-agent': 'agentsync',
+    'x-agentsync-event': event,
+  };
+  const secret = (await optionalSecret(extra.source_secret_ref)) ?? (await optionalSecret(job.project.callback_signing_secret_ref));
   if (secret) headers['x-agentsync-signature'] = `sha256=${createHmac('sha256', secret).update(body).digest('hex')}`;
 
-  try {
-    const res = await fetch(url, { method: 'POST', headers, body, signal: AbortSignal.timeout(10_000) });
-    await logEvent(job.task.id, 'callback.sent', `Callback to source system answered ${res.status}`, { status: res.status });
-  } catch (e) {
-    await logEvent(job.task.id, 'callback.failed', `Callback to source system failed: ${(e as Error).message}`);
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const res = await fetch(url, { method: 'POST', headers, body, signal: AbortSignal.timeout(10_000) });
+      if (res.status >= 500 && attempt === 1) continue;
+      await logEvent(job.task.id, 'callback.sent', `Callback (${event}) to source system answered ${res.status}`, { status: res.status, event });
+      return;
+    } catch (e) {
+      if (attempt === 2) {
+        await logEvent(job.task.id, 'callback.failed', `Callback (${event}) to source system failed: ${(e as Error).message}`, { event });
+      }
+    }
   }
 }
 

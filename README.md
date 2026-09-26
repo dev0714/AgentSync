@@ -177,7 +177,7 @@ Content-Type: application/json
   timeout never causes a duplicate branch, pull request or deployment.
 - Errors carry a machine-readable code, not just prose:
   `INVALID_API_KEY` 401 · `SOURCE_DISABLED` / `IP_NOT_ALLOWED` 403 ·
-  `PROJECT_NOT_FOUND` 404 · `PROJECT_DISABLED` 409 · `RATE_LIMITED` 429 ·
+  `PROJECT_NOT_FOUND` 404 · `PROJECT_DISABLED` / `CLIENT_NOT_MAPPED` 409 · `RATE_LIMITED` 429 ·
   `VALIDATION_FAILED` 422 (with every problem listed at once, not one per round
   trip).
 - `callback_url` must be an absolute `https` URL — it is an outbound request
@@ -193,6 +193,46 @@ Content-Type: application/json
   Planner, Engineer and Reviewer all see them, as reference material rather than
   instructions. Provider copies expire after a week and are deleted when the task
   ends. Problems with individual files come back as `attachment_problems`.
+
+### Routing by client, and what comes back
+
+A service desk knows its work by client, not by repository. Send `client`
+instead of `project_id` and AgentSync routes the task to the project that
+client is mapped to (Source systems → **Map clients**):
+
+```json
+{ "client": { "id": "4b1e…", "name": "Acme Ltd" }, "idempotency_key": "leadsync-ticket-…", "title": "…" }
+```
+
+An unmapped client is recorded so it appears in the mapping table, and the task
+is refused with `CLIENT_NOT_MAPPED` (409) until someone maps it. A source can
+also report its whole client list up front, so clients can be mapped before
+their first ticket:
+
+```http
+PUT /api/v1/agent/clients
+Authorization: Bearer ask_live_…
+
+{ "clients": [{ "id": "4b1e…", "name": "Acme Ltd", "active": true }] }
+```
+
+When `callback_url` is set, AgentSync POSTs to it as the task moves:
+
+| `event` | when |
+| --- | --- |
+| `plan_ready` | the plan is waiting for approval |
+| `pr_opened` | the pull request is waiting for the merge approval |
+| `completed` | merged; carries `client_note`, a plain-language line for the requester |
+| `failed` | the task stopped, with the reason in `summary` |
+| `cancelled` | a person rejected it |
+
+Each body also has `task_id`, `external_reference`, `title`, `status`,
+`summary`, `plan_summary`, `pull_request_url`, `commit_sha` and `portal_url`
+(a link straight to the task). It is signed as
+`x-agentsync-signature: sha256=<hex HMAC-SHA256 of the raw body>` with the
+source's callback secret (Source systems → Map clients → **Generate callback
+secret**, shown once and stored encrypted), or the project's secret when the
+source has none. A 5xx is retried once; a callback never fails the task.
 
 Keys are issued once and stored hashed:
 
