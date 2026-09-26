@@ -69,6 +69,7 @@ export async function POST(
     try {
       const job = await loadJob(id);
       await cleanupProviderFiles(aiContext(job), id).catch(() => undefined);
+      await serviceClient().rpc('agentsync_release_abandon', { p_task_id: id });
       const why = typeof body.comment === 'string' && body.comment.trim() ? `: ${body.comment.trim()}` : '';
       await sendCallback(job, 'cancelled', `Rejected in AgentSync${why}`.slice(0, 2000)).catch(() => undefined);
       if (job.task.pull_request_number && job.repository) {

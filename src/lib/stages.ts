@@ -35,6 +35,7 @@ import {
   sandboxAttachmentPrompt,
 } from './attachments';
 import { recall, remember, renderMemoryBlock } from './memory';
+import { DOC_PATH, recordAgentDoc } from './project-docs';
 import { optionalSecret } from './secrets';
 import { serviceClient } from './supabase';
 
@@ -256,7 +257,7 @@ function humanFeedback(job: Job): string {
 /* ---- analysing: read the repository ------------------------------------ */
 
 const KEY_FILES = [
-  'README.md', 'AGENTS.md', 'CLAUDE.md', 'package.json', 'tsconfig.json',
+  'AGENTSYNC.md', 'README.md', 'AGENTS.md', 'CLAUDE.md', 'package.json', 'tsconfig.json',
   'pyproject.toml', 'requirements.txt', 'go.mod', 'Cargo.toml', 'composer.json',
 ];
 
@@ -745,13 +746,26 @@ const REVIEW_SCHEMA = {
         additionalProperties: false,
       },
     },
+    release_bump: {
+      type: 'string',
+      enum: ['major', 'minor', 'patch'],
+      description: 'Semantic version bump for this change: major = breaks existing use, minor = new capability, patch = fix or small improvement.',
+    },
+    changelog_entry: {
+      type: 'string',
+      description: 'The CHANGELOG.md entry for this change: one to four markdown bullet points ("- ..."), written for someone using the project.',
+    },
+    description_update: {
+      type: 'string',
+      description: 'The full new AGENTSYNC.md when this change alters what the project does, its main parts or how to run it; otherwise an empty string.',
+    },
     client_note: {
       type: 'string',
       description:
         'Two or three sentences for the person who reported the request, written for a non-technical reader: what was changed and what they will notice. No file names, code or internal detail.',
     },
   },
-  required: ['verdict', 'summary', 'criteria', 'findings', 'client_note'],
+  required: ['verdict', 'summary', 'criteria', 'findings', 'release_bump', 'changelog_entry', 'description_update', 'client_note'],
   additionalProperties: false,
 };
 
@@ -760,6 +774,9 @@ type ReviewOut = {
   summary: string;
   criteria: { criterion: string; met: boolean; evidence: string }[];
   findings: { severity: string; file: string; description: string }[];
+  release_bump: 'major' | 'minor' | 'patch';
+  changelog_entry: string;
+  description_update: string;
   client_note: string;
 };
 
@@ -829,7 +846,9 @@ async function test(job: Job): Promise<Outcome> {
       taskBrief(job),
       `<approved_plan>\n${job.plan?.summary ?? ''}\n</approved_plan>`,
       `<diff>\n${diff}\n</diff>`,
+      `<project_description path="AGENTSYNC.md">\n${(await projectDescription(job)) ?? '(this project has no AGENTSYNC.md yet)'}\n</project_description>`,
       'Judge every acceptance criterion separately, and check the change against any attached documents too. verdict "submit" means ready for a person to approve the merge; "changes" means the Engineer should fix what you list; "reject" means the approach is wrong.',
+      'Also choose the release bump, write the CHANGELOG entry, and — only if this change alters what the project does, its main parts or how to run it — the complete updated AGENTSYNC.md (keep its structure and everything still true; otherwise give an empty string).',
     ].join('\n\n'),
     schema: REVIEW_SCHEMA,
     maxTokens: 32000,
@@ -840,7 +859,13 @@ async function test(job: Job): Promise<Outcome> {
   if (error) throw error;
   await update(job, {
     client_note: review.client_note?.trim() || null,
-    stage_state: { review_summary: review.summary, review_verdict: review.verdict },
+    stage_state: {
+      review_summary: review.summary,
+      review_verdict: review.verdict,
+      release_bump: review.release_bump,
+      changelog_entry: review.changelog_entry,
+      description_update: review.description_update,
+    },
   });
 
   if (review.verdict === 'reject') throw new StageFailed('REVIEW_REJECTED', review.summary);
@@ -854,6 +879,26 @@ async function test(job: Job): Promise<Outcome> {
     // Out of repair rounds: a person decides, with the reviewer's concerns in front of them.
   }
   return { to: 'creating_pull_request' };
+}
+
+/** The project's current AGENTSYNC.md as AgentSync has it (newer than the repo while a PR is open). */
+async function projectDescription(job: Job): Promise<string | null> {
+  const { data } = await db().rpc('agentsync_project_context', { p_project_id: job.task.project_id });
+  const current = (data as { current?: string | null } | null)?.current ?? null;
+  if (current) return current;
+  const files = ((job.task.stage_state.context as { files?: Record<string, string> } | undefined)?.files ?? {});
+  return files[DOC_PATH] ?? null;
+}
+
+/** Prepends a release to CHANGELOG.md's text (creating the file's heading if new). */
+function withChangelogEntry(existing: string | null, version: string, entry: string): string {
+  const date = new Date().toISOString().slice(0, 10);
+  const block = `## ${version} — ${date}\n\n${entry.trim()}\n`;
+  if (!existing || !existing.trim()) return `# Changelog\n\nAll notable changes to this project. Versions and entries are written by AgentSync with each change it merges.\n\n${block}`;
+  const lines = existing.split('\n');
+  const firstRelease = lines.findIndex((l) => /^##\s/.test(l));
+  if (firstRelease === -1) return `${existing.trimEnd()}\n\n${block}`;
+  return [...lines.slice(0, firstRelease), block, ...lines.slice(firstRelease)].join('\n');
 }
 
 /* ---- creating_pull_request: write the PR up for the approver ----------- */
@@ -871,6 +916,38 @@ async function describePullRequest(job: Job): Promise<Outcome> {
   const checks = runs.map((c) => `| ${c.name} | ${c.result} |`).join('\n') || '| (none reported) | — |';
   const steps = Array.isArray(job.plan?.steps) ? (job.plan?.steps as unknown[]).map((s, i) => `${i + 1}. ${String(s)}`).join('\n') : '';
 
+  // The release this change becomes, its CHANGELOG entry and — when the change
+  // alters what the project does — the updated AGENTSYNC.md, reviewed with the code.
+  const st = job.task.stage_state;
+  const entry = String(st.changelog_entry ?? '').trim() || `- ${job.task.title}`;
+  const { data: reserved } = await db().rpc('agentsync_release_reserve', {
+    p_task_id: job.task.id,
+    p_bump: String(st.release_bump ?? 'patch'),
+    p_title: job.task.title,
+    p_notes: entry,
+    p_pr_url: job.task.pull_request_url,
+  });
+  const version = (reserved as { version?: string } | null)?.version ?? null;
+  const descriptionUpdate = String(st.description_update ?? '').trim();
+  const branch = job.task.branch_name ?? branchFor(job);
+  let docsNote = '';
+  if (version && st.docs_committed_for !== version) {
+    const writes: { path: string; content: string }[] = [];
+    if (!isProtected(job, 'CHANGELOG.md')) {
+      const current = await readFile(client, r, 'CHANGELOG.md', branch);
+      if (!current?.includes(`## ${version} `)) writes.push({ path: 'CHANGELOG.md', content: withChangelogEntry(current, version, entry) });
+    }
+    if (descriptionUpdate && !isProtected(job, DOC_PATH)) {
+      const current = await readFile(client, r, DOC_PATH, branch);
+      if (current?.trim() !== descriptionUpdate) writes.push({ path: DOC_PATH, content: `${descriptionUpdate}\n` });
+    }
+    if (writes.length) {
+      await commitFiles(client, r, branch, `Release ${version}: ${writes.map((w) => w.path).join(', ')}`, writes);
+    }
+    await update(job, { stage_state: { release_version: version, docs_committed_for: version } });
+  }
+  if (descriptionUpdate) docsNote = `\n\n\`${DOC_PATH}\` is updated in this pull request to describe the change.`;
+
   const body = [
     `**AgentSync task ${reference(job)}** — ${job.task.title}`,
     '',
@@ -887,6 +964,7 @@ async function describePullRequest(job: Job): Promise<Outcome> {
     `### Review — ${String(job.task.stage_state.review_verdict ?? 'n/a')}`,
     String(job.task.stage_state.review_summary ?? ''),
     '',
+    ...(version ? [`### Release ${version}`, entry + docsNote, ''] : []),
     '---',
     'This pull request is merged by AgentSync only after a person approves it in the control plane.',
   ].join('\n');
@@ -905,7 +983,22 @@ async function ship(job: Job): Promise<Outcome> {
 
   const mergeSha = await mergePullRequest(client, r, job.task.pull_request_number,
     `${job.task.title} (#${job.task.pull_request_number})`);
-  const summary = `Merged #${job.task.pull_request_number} into ${r.defaultBranch}. ${job.plan?.summary ?? ''}`.trim();
+  // Release it: tag the merge commit and record the version.
+  const version = typeof job.task.stage_state.release_version === 'string' ? job.task.stage_state.release_version : null;
+  if (version) {
+    const tag = `v${version}`;
+    await client.git.createRef({ owner: r.owner, repo: r.repo, ref: `refs/tags/${tag}`, sha: mergeSha })
+      .catch((e) => logEvent(job.task.id, 'release.tag_failed', `Could not tag ${tag}: ${(e as Error).message}`));
+    await db().rpc('agentsync_release_finish', { p_task_id: job.task.id, p_commit_sha: mergeSha, p_tag: tag });
+    await logEvent(job.task.id, 'release.published', `Released ${tag}`, { version });
+  }
+  const description = String(job.task.stage_state.description_update ?? '').trim();
+  if (description) {
+    await recordAgentDoc(job.task.project_id, `${description}\n`, job.task.id, mergeSha, job.task.title)
+      .catch((e) => console.error('could not record the description version', e));
+  }
+
+  const summary = `Merged #${job.task.pull_request_number} into ${r.defaultBranch}${version ? ` as v${version}` : ''}. ${job.plan?.summary ?? ''}`.trim();
   await update(job, { commit_sha: mergeSha, result_summary: summary });
 
   await remember({

@@ -375,6 +375,35 @@ concurrency cap holds, a repeated idempotency key returns the original task, a
 disabled source and a non-allowlisted IP are both rejected, and an expired
 lease returns its task to the queue.
 
+## Project descriptions and releases
+
+Every project has an **AGENTSYNC.md** in its repository: what the project is and
+does, its main parts and how to run it. The agents read it before planning a
+change, and the repository router reads it to tell a client's repositories apart.
+
+- **Import** (Projects → Description → *Create for this project* / *for every
+  project*): AgentSync reads `AGENTSYNC.md` from the default branch; where there
+  is none, it copies the current description (README, else `CLAUDE.md` /
+  `AGENTS.md`) into a new one and opens a pull request adding it.
+- **Versions**: every change is a numbered version recording who or which task
+  made it, when, and the text (`agentsync.project_document_versions`). The
+  History tab compares any version with the one before and restores it. Edits and
+  restores reach the repository by pull request (branch
+  `agentsync/project-description`); *Check repository* records edits made
+  directly in the repo as versions too.
+- **Kept current by AgentSync**: the Reviewer writes the updated AGENTSYNC.md when
+  a change alters what the project does, and it is committed to the task's own
+  pull request, so it is reviewed with the code. When merged it becomes a version
+  "Edited by AgentSync" linked to the task.
+
+**Releases.** Each project has a version (read from `package.json` or its highest
+`vX.Y.Z` tag at import). The Reviewer chooses the bump (major / minor / patch) and
+writes a changelog entry; preparing the pull request reserves the next version
+(`agentsync.project_releases`, so two open PRs never take the same number) and
+commits the `CHANGELOG.md` entry to the PR. The merge releases it, tags the merge
+commit `vX.Y.Z` and updates the project's version; a failed or rejected task frees
+its reserved version.
+
 ## Agent memory
 
 So an agent knows what happened to a file before it edits it again. Two

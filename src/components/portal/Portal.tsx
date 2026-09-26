@@ -262,6 +262,7 @@ export default function Portal({
                   openTask(id);
                   router.refresh();
                 }}
+                onOpenTask={(id) => openTask(id)}
                 onConnect={() => {
                   setScreen("connections");
                   setConnTab("github");

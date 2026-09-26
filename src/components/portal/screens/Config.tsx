@@ -21,6 +21,7 @@ import RequestForm from './RequestForm';
 import { TierPicker, useTierSettings, type EngineerMode, type Tier } from '../tiers';
 import { IssueKeyForm } from './SetupForms';
 import SourceClients from './SourceClients';
+import ProjectDocs from './ProjectDocs';
 
 function SetupCard({ title, detail, children }: { title: string; detail: string; children: React.ReactNode }) {
   return (
@@ -90,7 +91,10 @@ export function Project_({
   onConnect,
   canSubmit,
   onSubmitted,
+  onOpenTask,
 }: {
+  /** Opens a task's detail (from the description's history or releases). */
+  onOpenTask?: (taskId: string) => void;
   /** Whether the signed-in person's role may submit requests. */
   canSubmit: boolean;
   /** Called with the new task's id after a request is submitted. */
@@ -328,6 +332,8 @@ export function Project_({
           {tiers?.failover?.[project.id] ? 'On' : 'Off'}
         </label>
       </div>
+
+      <ProjectDocs key={`docs:${project.id}`} projectId={project.id} tenantSlug={tenantSlug} onOpenTask={onOpenTask} />
 
       <RequestForm
         key={`${project.id}:${tiers?.projects[project.id] ?? 'medium'}`}

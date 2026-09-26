@@ -473,3 +473,28 @@ a:hover {
     transform: scaleX(1);
   }
 }
+
+/* Rendered markdown (a project's AGENTSYNC.md, release notes). */
+@layer components {
+  .md-doc { color: var(--color-ink-2); font-size: 14.5px; line-height: 1.65; overflow-wrap: anywhere; }
+  .md-doc > :first-child { margin-top: 0; }
+  .md-doc > :last-child { margin-bottom: 0; }
+  .md-doc h1 { font-family: var(--font-display, inherit); font-size: 24px; line-height: 1.2; font-weight: 700; letter-spacing: -0.02em; color: var(--color-ink); margin: 0 0 12px; }
+  .md-doc h2 { font-size: 18px; font-weight: 650; color: var(--color-ink); margin: 22px 0 8px; }
+  .md-doc h3 { font-size: 15.5px; font-weight: 650; color: var(--color-ink); margin: 18px 0 6px; }
+  .md-doc p { margin: 0 0 10px; }
+  .md-doc ul, .md-doc ol { margin: 0 0 10px; padding-left: 22px; }
+  .md-doc ul { list-style: disc; }
+  .md-doc ol { list-style: decimal; }
+  .md-doc li { margin: 3px 0; }
+  .md-doc a { color: var(--color-agent-ink); text-decoration: underline; text-underline-offset: 3px; }
+  .md-doc code { font-family: var(--font-mono, ui-monospace, monospace); font-size: 0.9em; background: var(--color-raised); border: 1px solid var(--color-line-soft); border-radius: 5px; padding: 1px 5px; }
+  .md-doc pre { background: var(--color-raised); border: 1px solid var(--color-line-soft); border-radius: 8px; padding: 10px 12px; overflow-x: auto; margin: 0 0 12px; }
+  .md-doc pre code { background: none; border: 0; padding: 0; }
+  .md-doc blockquote { margin: 0 0 10px; padding: 2px 12px; border-left: 3px solid var(--color-line); color: var(--color-muted); }
+  .md-doc table { border-collapse: collapse; margin: 0 0 12px; display: block; overflow-x: auto; }
+  .md-doc th, .md-doc td { border: 1px solid var(--color-line-soft); padding: 5px 9px; text-align: left; }
+  .md-doc th { background: var(--color-raised); font-weight: 600; }
+  .md-doc hr { border: 0; border-top: 1px solid var(--color-line); margin: 16px 0; }
+  .md-doc img { max-width: 100%; }
+}

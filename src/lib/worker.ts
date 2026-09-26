@@ -104,6 +104,8 @@ export async function tick(workerId: string): Promise<TickResult> {
             await sendCallback(job, 'failed', `${code}: ${detail}`);
             // Provider copies of attachments go once the task is over.
             await cleanupProviderFiles(aiContext(job), taskId);
+            // A version reserved for this task's pull request is freed.
+            await serviceClient().rpc('agentsync_release_abandon', { p_task_id: taskId });
           })
           .catch(() => undefined);
         await logEvent(taskId, 'agent.failed', `${from} failed: ${detail}`.slice(0, 2000), { code });
