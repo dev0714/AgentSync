@@ -135,6 +135,8 @@ async function start(row: MapRow): Promise<void> {
       resources: { vcpus: 2 },
       timeout: RUN_LIMIT_MS + 5 * 60_000,
       tags: { app: 'agentsync', job: 'project-map' },
+      // A run is thrown away when it finishes: no snapshots kept (or billed).
+      persistent: false,
       ...credentials(),
     });
 
@@ -243,7 +245,8 @@ async function poll(row: MapRow): Promise<void> {
   } catch (e) {
     await setMap(row.project_id, { status: 'failed', error: `Could not collect the map: ${(e as Error).message}`.slice(0, 1000), finished_at: new Date().toISOString() });
   }
-  await sandbox.stop().catch(() => undefined);
+  // Gone for good, with any snapshot, so nothing is left behind to store.
+  await sandbox.delete({ deleteOrphanSnapshots: true }).catch(() => sandbox.stop().catch(() => undefined));
 }
 
 /**
