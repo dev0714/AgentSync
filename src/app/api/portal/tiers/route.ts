@@ -9,7 +9,8 @@ import { serviceClient } from '@/lib/supabase';
  *   PUT    { tenant_slug, agent_key, tier, model, effort }   override one slot for the tenant
  *   DELETE { tenant_slug, agent_key, tier }                  back to the platform default
  *   POST   { project_id, tier }                              set a project's default tier
- *   POST   { project_id, engineer_mode }                     'sandbox' or 'direct' Engineer
+ *   POST   { project_id, engineer_mode }                     'sandbox', 'openai_sandbox' or 'direct' Engineer
+ *   POST   { project_id, failover }                          opt the project in or out of provider failover
  *
  * The database re-checks that the session user may configure the tenant.
  */
@@ -82,6 +83,14 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: 'UNAUTHENTICATED' }, { status: 401 });
   const b = await body(request);
   if (!b) return NextResponse.json({ error: 'BAD_JSON' }, { status: 400 });
+  if (typeof b.failover === 'boolean') {
+    const { data, error } = await serviceClient().rpc('agentsync_set_project_failover', {
+      p_user_id: user.id,
+      p_project_id: String(b.project_id ?? ''),
+      p_permitted: b.failover,
+    });
+    return reply(data, error);
+  }
   if (typeof b.engineer_mode === 'string') {
     const { data, error } = await serviceClient().rpc('agentsync_set_project_engineer_mode', {
       p_user_id: user.id,

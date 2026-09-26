@@ -24,6 +24,11 @@ export const MODELS: { id: string; label: string; note?: string }[] = [
   { id: 'claude-sonnet-5', label: 'Claude Sonnet 5' },
   { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', note: 'no thinking effort' },
   { id: 'claude-fable-5', label: 'Claude Fable 5', note: 'your limit: 50 requests, 20K output tokens a minute' },
+  { id: 'gpt-5.5', label: 'OpenAI GPT-5.5', note: 'needs an OpenAI key' },
+  { id: 'gpt-5.5-pro', label: 'OpenAI GPT-5.5 Pro', note: 'needs an OpenAI key' },
+  { id: 'gpt-5.4', label: 'OpenAI GPT-5.4', note: 'needs an OpenAI key' },
+  { id: 'gpt-5.4-mini', label: 'OpenAI GPT-5.4 mini', note: 'needs an OpenAI key' },
+  { id: 'gpt-5.4-nano', label: 'OpenAI GPT-5.4 nano', note: 'needs an OpenAI key' },
 ];
 export const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 const EFFORT_LABEL: Record<string, string> = {
@@ -31,12 +36,14 @@ const EFFORT_LABEL: Record<string, string> = {
 };
 
 export type Slot = { agent_key: string; tier: Tier; model: string; effort: string | null; overridden: boolean };
-export type EngineerMode = 'sandbox' | 'direct';
+export type EngineerMode = 'sandbox' | 'openai_sandbox' | 'direct';
 export type TierSettings = {
   can_edit: boolean;
   slots: Slot[];
   projects: Record<string, Tier>;
   engineer_modes?: Record<string, EngineerMode>;
+  failover?: Record<string, boolean>;
+  providers?: string[];
 };
 
 export function modelLabel(id: string) {

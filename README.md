@@ -255,6 +255,19 @@ request. The Planner and Reviewer remain direct model calls. *Direct* mode keeps
 the single-call Engineer. The agent and environment are created once per
 Anthropic credential and updated (new version) when the Engineer prompt changes.
 
+**OpenAI.** GPT models (GPT-5.5, 5.5 Pro, 5.4, 5.4 mini/nano) can fill any tier
+slot; those agents call the Responses API with a strict JSON schema and the
+slot's reasoning effort. Projects can also run the Engineer in an **OpenAI
+sandbox** — a background Responses run with the hosted `shell` tool in a
+container whose network is limited to GitHub and package registries, the GitHub
+token passed as a secret scoped to github.com — with the same report, plan
+check and pull request as the Claude sandbox. **Failover:** when a call fails
+with a trigger listed on the provider's credential (`rate_limit`, `timeout`,
+`5xx`), the step is retried once on the other provider — for projects that opt
+in (Projects → *Fail over to the other provider*) where the credential requires
+it — and the usage row is marked as a failover. OpenAI prices in `src/lib/ai.ts`
+are estimates; correct them from OpenAI's pricing page.
+
 Guardrails are enforced in code, not asked for in prompts: the Engineer's
 changes outside the approved plan's paths are dropped, protected paths
 (`.github/workflows/**`, `.env*`, keys) are never written, and file and line

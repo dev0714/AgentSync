@@ -111,6 +111,15 @@ export function Project_({
   const appSlug = typeof github?.app_slug === 'string' ? github.app_slug : null;
   const { settings: tiers, reload: reloadTiers } = useTierSettings(tenantSlug);
 
+  async function setFailover(projectId: string, failover: boolean) {
+    const res = await fetch('/api/portal/tiers', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ project_id: projectId, failover }),
+    });
+    if (res.ok) void reloadTiers();
+  }
+
   async function setEngineerMode(projectId: string, mode: EngineerMode) {
     const res = await fetch('/api/portal/tiers', {
       method: 'POST',
@@ -270,13 +279,15 @@ export function Project_({
         <div className="max-w-[60ch]">
           <div className="text-[15px] font-semibold text-ink">Where the Engineer works</div>
           <div className="text-[13.5px] text-muted" style={{ lineHeight: 1.55 }}>
-            {(tiers?.engineer_modes?.[project.id] ?? 'sandbox') === 'sandbox'
-              ? 'In a sandbox (Claude Managed Agents): it clones the repository, runs your install, lint, tests and build, fixes what fails, then pushes. AgentSync checks the pushed changes against the plan before any pull request.'
-              : 'Direct: one model call writes the planned files; your GitHub Actions are the only checks. Cheaper, but nothing is run before the push.'}
+            {{
+              sandbox: 'Claude sandbox (Managed Agents): it clones the repository, runs your install, lint, tests and build, fixes what fails, then pushes. AgentSync checks the pushed changes against the plan before any pull request.',
+              openai_sandbox: "OpenAI sandbox (hosted shell container): the same job in OpenAI's container, using the Engineer's GPT model for the tier. Needs an OpenAI key. AgentSync checks the pushed changes against the plan before any pull request.",
+              direct: 'Direct: one model call writes the planned files; your GitHub Actions are the only checks. Cheaper, but nothing is run before the push.',
+            }[tiers?.engineer_modes?.[project.id] ?? 'sandbox']}
           </div>
         </div>
         <div role="radiogroup" aria-label="Engineer mode" className="inline-flex w-fit shrink-0 rounded-xl border border-line bg-card p-1">
-          {(['sandbox', 'direct'] as const).map((m) => {
+          {(['sandbox', 'openai_sandbox', 'direct'] as const).map((m) => {
             const active = (tiers?.engineer_modes?.[project.id] ?? 'sandbox') === m;
             return (
               <button
@@ -290,11 +301,31 @@ export function Project_({
                   active ? 'bg-ink text-canvas' : 'text-ink-3 hover:bg-canvas'
                 }`}
               >
-                {m === 'sandbox' ? 'Sandbox' : 'Direct'}
+                {m === 'sandbox' ? 'Claude sandbox' : m === 'openai_sandbox' ? 'OpenAI sandbox' : 'Direct'}
               </button>
             );
           })}
         </div>
+      </div>
+
+      <div className="card flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="max-w-[60ch]">
+          <div className="text-[15px] font-semibold text-ink">Fail over to the other provider</div>
+          <div className="text-[13.5px] text-muted" style={{ lineHeight: 1.55 }}>
+            If a Claude call fails with a rate limit, timeout or server error, retry that step on OpenAI (and the
+            other way round) — per the triggers on each key under Connections → AI providers. Both keys must be set.
+          </div>
+        </div>
+        <label className="flex shrink-0 items-center gap-2.5 text-[14px] font-medium text-ink-2">
+          <input
+            type="checkbox"
+            className="size-4 accent-[var(--color-accent)]"
+            checked={Boolean(tiers?.failover?.[project.id])}
+            disabled={!tiers?.can_edit}
+            onChange={(e) => void setFailover(project.id, e.target.checked)}
+          />
+          {tiers?.failover?.[project.id] ? 'On' : 'Off'}
+        </label>
       </div>
 
       <RequestForm

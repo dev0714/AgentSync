@@ -1,13 +1,14 @@
 import 'server-only';
 import { createHash, createHmac } from 'node:crypto';
 import type { Octokit } from '@octokit/rest';
-import { loadAgent, runAgent, type AiContext } from './ai';
+import { loadAgent, runAgent, type AiContext, type Credential } from './ai';
 import {
   engineerSessionState,
   rotateSessionToken,
   startEngineerSession,
   stopEngineerSession,
 } from './managed-engineer';
+import { openaiEngineerState, startOpenAIEngineer, stopOpenAIEngineer } from './openai-engineer';
 import {
   branchSha,
   changedFiles,
@@ -68,7 +69,7 @@ export type Job = {
     plan_approval_required: boolean | null;
     monthly_ai_budget: number | null;
     /** 'sandbox': the Engineer runs as a Managed Agent; 'direct': one model call. */
-    engineer_mode?: 'sandbox' | 'direct' | null;
+    engineer_mode?: 'sandbox' | 'openai_sandbox' | 'direct' | null;
     callback_signing_secret_ref: string | null;
   };
   repository: {
@@ -83,7 +84,9 @@ export type Job = {
   } | null;
   runtime: { maximum_repair_attempts: number | null; maximum_execution_minutes: number | null } | null;
   github: Installation | null;
-  ai: { key_reference: string | null; model: string | null } | null;
+  ai: Credential;
+  ai_openai?: Credential;
+  project_ai?: { fallback_permitted: boolean | null } | null;
   plan: {
     version: number;
     summary: string;
@@ -155,6 +158,8 @@ function aiContext(job: Job): AiContext {
   return {
     taskId: job.task.id,
     credential: job.ai,
+    openai: job.ai_openai ?? null,
+    failoverPermitted: Boolean(job.project_ai?.fallback_permitted),
     monthlyBudget: job.project.monthly_ai_budget === null ? null : Number(job.project.monthly_ai_budget),
     monthSpend: Number(job.month_spend) || 0,
   };
@@ -379,7 +384,7 @@ type EditOut = { files: { path: string; action: 'create' | 'modify' | 'delete'; 
 
 async function implement(job: Job): Promise<Outcome> {
   if (!job.plan) throw new StageFailed('NO_PLAN', 'there is no plan to implement');
-  if ((job.project.engineer_mode ?? 'sandbox') === 'sandbox') return implementInSandbox(job);
+  if ((job.project.engineer_mode ?? 'sandbox') !== 'direct') return implementInSandbox(job);
   const r = repoOf(job);
   const client = await gh(job);
   const branch = branchFor(job);
@@ -498,8 +503,10 @@ async function implementInSandbox(job: Job): Promise<Outcome> {
     session_started_at?: string | null;
     token_at?: string | null;
     session_model?: string | null;
+    session_provider?: 'anthropic' | 'openai' | null;
     repair_feedback?: string | null;
   };
+  const onOpenAI = (state.session_provider ?? (job.project.engineer_mode === 'openai_sandbox' ? 'openai' : 'anthropic')) === 'openai';
 
   if (ctx.monthlyBudget !== null && ctx.monthlyBudget > 0 && ctx.monthSpend >= ctx.monthlyBudget) {
     throw new StageFailed('BUDGET_EXCEEDED', `project has spent its $${ctx.monthlyBudget} monthly AI budget`);
@@ -523,16 +530,25 @@ async function implementInSandbox(job: Job): Promise<Outcome> {
     ].filter(Boolean).join('\n\n');
 
     const token = await installationToken(job.github);
-    const started = await startEngineerSession({
-      ctx,
-      engineer,
-      projectName: job.project.name,
-      repoUrl: `https://github.com/${r.owner}/${r.repo}`,
-      checkoutBranch: exists ? branch : r.defaultBranch,
-      token,
-      prompt,
-      title: `${reference(job)} — ${job.task.title}`,
-    });
+    const started = onOpenAI
+      ? { ...(await startOpenAIEngineer({
+          ctx,
+          engineer,
+          projectName: job.project.name,
+          repoFullName: `${r.owner}/${r.repo}`,
+          token,
+          prompt,
+        })), resourceId: null }
+      : await startEngineerSession({
+          ctx,
+          engineer,
+          projectName: job.project.name,
+          repoUrl: `https://github.com/${r.owner}/${r.repo}`,
+          checkoutBranch: exists ? branch : r.defaultBranch,
+          token,
+          prompt,
+          title: `${reference(job)} — ${job.task.title}`,
+        });
     const now = new Date().toISOString();
     await update(job, {
       branch_name: branch,
@@ -542,26 +558,30 @@ async function implementInSandbox(job: Job): Promise<Outcome> {
         session_started_at: now,
         token_at: now,
         session_model: started.model,
+        session_provider: onOpenAI ? 'openai' : 'anthropic',
       },
     });
     await logEvent(job.task.id, 'agent.sandbox_started',
-      `Engineer started in a sandbox (${started.model}, ${engineer.tier ?? 'medium'} tier)`,
+      `Engineer started in ${onOpenAI ? 'an OpenAI' : 'a Claude'} sandbox (${started.model}, ${engineer.tier ?? 'medium'} tier)`,
       { session_id: started.sessionId });
     return { wait: 30 };
   }
 
   const sessionId = state.session_id;
-  const status = await engineerSessionState(ctx, sessionId);
+  const status = onOpenAI
+    ? await openaiEngineerState(ctx, sessionId, state.session_model ?? 'gpt-5.5')
+    : await engineerSessionState(ctx, sessionId);
 
   if (status.state === 'running') {
     const minutes = (Date.now() - Date.parse(state.session_started_at ?? new Date().toISOString())) / 60000;
     if (minutes > SESSION_LIMIT_MINUTES) {
-      await stopEngineerSession(ctx, sessionId);
+      await (onOpenAI ? stopOpenAIEngineer(ctx, sessionId) : stopEngineerSession(ctx, sessionId));
       await update(job, { stage_state: { session_id: null } });
       throw new StageFailed('SANDBOX_TIMED_OUT', `the Engineer was still working after ${SESSION_LIMIT_MINUTES} minutes`);
     }
     const tokenAge = (Date.now() - Date.parse(state.token_at ?? new Date().toISOString())) / 60000;
-    if (tokenAge > TOKEN_ROTATE_MINUTES && state.resource_id) {
+    // OpenAI's container takes its secret once, at the start; only Claude sessions rotate.
+    if (!onOpenAI && tokenAge > TOKEN_ROTATE_MINUTES && state.resource_id) {
       await rotateSessionToken(ctx, sessionId, state.resource_id, await installationToken(job.github));
       await update(job, { stage_state: { token_at: new Date().toISOString() } });
     }
@@ -577,8 +597,9 @@ async function implementInSandbox(job: Job): Promise<Outcome> {
     p_output_tokens: status.usage.output,
     p_cost: status.usage.costCents / 100,
     p_duration_seconds: (Date.now() - Date.parse(state.session_started_at ?? new Date().toISOString())) / 1000,
+    p_provider: onOpenAI ? 'openai' : 'anthropic',
   });
-  await update(job, { stage_state: { session_id: null, resource_id: null, repair_feedback: null } });
+  await update(job, { stage_state: { session_id: null, resource_id: null, session_provider: null, repair_feedback: null } });
 
   if (status.state === 'stopped') throw new StageFailed('SANDBOX_STOPPED', status.reason);
   const report = status.report;
