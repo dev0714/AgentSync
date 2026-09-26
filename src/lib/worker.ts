@@ -7,8 +7,8 @@ import {
   transitionTask,
 } from './tasks';
 import { cleanupProviderFiles } from './attachments';
-import { tickMaps } from './project-maps';
-import { STAGES, StageFailed, aiContext, callbackEventFor, loadJob, logEvent, sendCallback } from './stages';
+import { recordMapFeedback, tickMaps } from './project-maps';
+import { STAGES, StageFailed, aiContext, callbackEventFor, loadJob, logEvent, mapNodesOf, sendCallback } from './stages';
 
 /**
  * The worker harness: claim a task, run the stage for its current status,
@@ -107,6 +107,8 @@ export async function tick(workerId: string): Promise<TickResult> {
             await cleanupProviderFiles(aiContext(job), taskId);
             // A version reserved for this task's pull request is freed.
             await serviceClient().rpc('agentsync_release_abandon', { p_task_id: taskId });
+            // The map nodes it worked from led nowhere, this time.
+            await recordMapFeedback(taskId, 'dead_end', mapNodesOf(job)).catch(() => undefined);
           })
           .catch(() => undefined);
         await logEvent(taskId, 'agent.failed', `${from} failed: ${detail}`.slice(0, 2000), { code });

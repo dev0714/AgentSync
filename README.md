@@ -407,33 +407,55 @@ its reserved version.
 ## Code maps (Graphify)
 
 Every project gets a map of its code made with
-[Graphify](https://github.com/Graphify-Labs/graphify) (`graphifyy[sql]==0.9.69`,
+[Graphify](https://github.com/Graphify-Labs/graphify) (`graphifyy[sql,anthropic]==0.9.69`,
 pinned): which files, functions and services connect to which, and the
-subsystems they form. It is made **code-only** — tree-sitter parsing, no AI model,
-nothing sent anywhere — in a Vercel Sandbox that clones the repository with a
-short-lived GitHub App token:
+subsystems they form. The code is parsed with tree-sitter (**code-only**: no
+documents, no AI extraction) in a Vercel Sandbox that clones the repository with
+a short-lived GitHub App token. One run:
 
 ```
 graphify extract . --code-only [--update]   # graph.json
 graphify cluster-only .                      # GRAPH_REPORT.md, graph.html
+graphify label . --backend claude            # AI names for the subsystems (only with a key)
+graphify god-nodes --json                    # hubs.json: the most-connected code
+graphify export callflow-html                # callflow.html: architecture / call-flow diagrams
+graphify tree                                # tree.html: file → symbol tree
+graphify export wiki                         # wiki.json: one article per subsystem
+graphify export svg                          # graph.svg: a picture of the graph
+graphify reflect                             # LESSONS.md: what past tasks taught
 ```
 
-With no AI key and no `claude` CLI in the sandbox (and `env -i` around both
-commands), subsystems are named after their most-connected item and the report
-shows a token cost of 0. The outputs and Graphify's cache (so the next run
-re-parses only what changed) go to the private `project-maps` bucket;
-`agentsync.project_maps` tracks each run (queued → running → ready | failed).
-
+- **AI names**: `label` runs with the tenant's Anthropic key and
+  `claude-haiku-4-5` (a couple of short calls per run). Without a key, or if it
+  fails, subsystems are named after their most-connected item and the run goes
+  on. Every other command runs under `env -i`, so no key reaches it.
+- **Lessons**: each finished task records an outcome against the map nodes it
+  worked from (`agentsync.project_map_feedback`): *useful* when merged, *dead end*
+  when it failed or was rejected without a reason, *corrected* when a person sent
+  it back with one. A run writes them as Graphify memory files and `reflect`
+  turns them into LESSONS.md.
 - **When**: on import, after every merge, and on request (Projects → Map → *Map
   again* / *Map every project*). The worker's tick starts queued runs, two at a
   time (`AGENTSYNC_MAP_CONCURRENCY`), and collects finished ones; a run is stopped
-  after 30 minutes.
-- **Portal**: the Map tab shows the report and the interactive graph. The graph
-  is served under a sandbox CSP (an opaque origin with no access to the portal),
-  with vis-network 9.1.6 inlined from `public/vendor/`, checked against the same
-  sha384 integrity hash Graphify's page declares.
-- **Agents**: the Analyst adds the report and the connections around the files a
-  request touches to the context the Planner reads.
+  after 30 minutes. Outputs and Graphify's cache (so the next run re-parses only
+  what changed) go to the private `project-maps` bucket; `agentsync.project_maps`
+  tracks each run.
+- **Portal** (Projects → Map): Report, Interactive map, Call flow, File tree,
+  Wiki, Hubs, Lessons, Picture, and *Ask the map* (search, explain, what depends
+  on it, how two things connect). Graphify's pages are served under a sandbox CSP
+  (an opaque origin with no access to the portal), each with its library inlined
+  from `public/vendor/` and checked against a pinned sha384: vis-network 9.1.6,
+  d3 7.9.0, mermaid 11.17.2.
+- **Agents** (`src/lib/graph-query.ts` answers Graphify's `query`, `affected`,
+  `path` and `explain` from graph.json, following its scoring and traversal):
+  - the Analyst adds the report, the lessons, the part of the code the request is
+    about (`query`) and what depends on the files it looks likely to touch;
+  - after planning, the plan's blast radius — everything depending on its files,
+    and any hub it changes — is logged for the approver and given to the Engineer
+    and the Reviewer, and goes in the pull request description;
+  - the Engineer's sandbox gets graph.json and can run Graphify itself;
+  - routing between a client's repositories adds the code in each that matches
+    the ticket.
 - **Credentials**: automatic on Vercel (OIDC); elsewhere set `VERCEL_ACCESS_TOKEN`,
   `VERCEL_TEAM_ID` and `VERCEL_PROJECT_ID`.
 

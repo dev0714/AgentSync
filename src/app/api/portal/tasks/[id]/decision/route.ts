@@ -3,7 +3,8 @@ import { currentUser } from '@/lib/auth';
 import { closePullRequest, githubFor } from '@/lib/github';
 import { kickWorker } from '@/lib/kick';
 import { cleanupProviderFiles } from '@/lib/attachments';
-import { aiContext, loadJob, sendCallback } from '@/lib/stages';
+import { recordMapFeedback } from '@/lib/project-maps';
+import { aiContext, loadJob, mapNodesOf, sendCallback } from '@/lib/stages';
 import { serviceClient } from '@/lib/supabase';
 
 /**
@@ -62,6 +63,15 @@ export async function POST(
       { error: result.error, detail: result.detail },
       { status: STATUS[result.error ?? ''] ?? 422 },
     );
+  }
+
+  // A person sending work back teaches the code map: with their reason it's a
+  // correction, without one a dead end (graphify reflect).
+  if (body.decision === 'changes_requested' || body.decision === 'rejected') {
+    const reason = typeof body.comment === 'string' ? body.comment.trim() : '';
+    await loadJob(id)
+      .then((job) => recordMapFeedback(id, reason ? 'corrected' : 'dead_end', mapNodesOf(job), reason || null))
+      .catch(() => undefined);
   }
 
   // A rejected merge closes the pull request so it doesn't linger open.

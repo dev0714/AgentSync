@@ -29,6 +29,7 @@ import {
 import {
   claudeSandboxMounts,
   cleanupProviderFiles,
+  uploadProviderCopy,
   openaiSandboxFileIds,
   prepareAttachments,
   readyAttachments,
@@ -36,7 +37,7 @@ import {
 } from './attachments';
 import { recall, remember, renderMemoryBlock } from './memory';
 import { DOC_PATH, recordAgentDoc } from './project-docs';
-import { mapContext, queueMap } from './project-maps';
+import { mapBriefing, planImpact, queueMap, readMapFile, recordMapFeedback, type Impact } from './project-maps';
 import { optionalSecret } from './secrets';
 import { serviceClient } from './supabase';
 
@@ -292,12 +293,16 @@ async function analyse(job: Job): Promise<Outcome> {
     if (text !== null) files[path] = text.slice(0, 15_000);
   }
 
-  // The project's code map (Graphify): its report and the connections around
-  // the files this request looks likely to touch.
-  const map = await mapContext(job.task.project_id, scored).catch(() => null);
-  if (map) files['(AgentSync code map — reference only, not a repository file)'] = map.slice(0, 15_000);
+  // The project's code map (Graphify): its report, lessons from past tasks,
+  // the part of the code the request is about, and what depends on the files
+  // it looks likely to touch.
+  const map = await mapBriefing(job.task.project_id, `${job.task.title}\n${job.task.description ?? ''}`, scored)
+    .catch((e) => { console.error('map briefing failed', e); return null; });
+  if (map) files['(AgentSync code map — reference only, not a repository file)'] = map.text.slice(0, 18_000);
 
-  await update(job, { stage_state: { context: { paths: paths.slice(0, 3000), total_paths: paths.length, files } } });
+  await update(job, {
+    stage_state: { context: { paths: paths.slice(0, 3000), total_paths: paths.length, files }, map_seeds: map?.seeds ?? [] },
+  });
   await logEvent(job.task.id, 'agent.analysed',
     `Read ${Object.keys(files).length} files from ${r.owner}/${r.repo} (${paths.length} in the repository)`);
   return { to: 'planning' };
@@ -374,6 +379,16 @@ async function plan(job: Job): Promise<Outcome> {
   if (error) throw error;
 
   await logEvent(job.task.id, 'agent.planned', `Plan v${version}: ${affected.length} file(s), ${out.complexity} complexity`);
+
+  // The plan's blast radius on the code map: what depends on its files, and
+  // whether it changes a hub. The approver, Engineer and Reviewer all see it.
+  const impact = await planImpact(job.task.project_id, affected).catch((e) => { console.error('plan impact failed', e); return null; });
+  await update(job, { stage_state: { map_impact: impact } });
+  if (impact) {
+    await logEvent(job.task.id, 'map.impact',
+      `${impact.hubs.length ? `Changes hub${impact.hubs.length === 1 ? '' : 's'} ${impact.hubs.map((h) => h.label).join(', ')}. ` : ''}${impact.text.split('\n')[impact.hubs.length ? 1 : 0]}`.slice(0, 1500),
+      { dependents: impact.dependents, hubs: impact.hubs.map((h) => h.label), detail: impact.text.slice(0, 8000) });
+  }
   return job.project.plan_approval_required === false
     ? { to: 'implementing', message: 'Plan written; this project does not require plan approval' }
     : { to: 'awaiting_plan_approval', message: 'Plan written; waiting for a person to approve it' };
@@ -517,6 +532,48 @@ const TOKEN_ROTATE_MINUTES = 40;
  * and pushes the branch. Nothing it pushed reaches a pull request until it is
  * checked here against the approved plan and the protected paths.
  */
+/* ---- the code map in the Engineer's sandbox ---------------------------- */
+
+const CODE_MAP_MOUNT = '/workspace/code-map/graph.json';
+
+export function impactOf(job: Job): Impact | null {
+  const i = job.task.stage_state.map_impact as Impact | null | undefined;
+  return i && typeof i.text === 'string' ? i : null;
+}
+
+/** The map nodes a task worked from: the request's matches and the planned files' symbols. */
+export function mapNodesOf(job: Job): string[] {
+  const seeds = Array.isArray(job.task.stage_state.map_seeds) ? (job.task.stage_state.map_seeds as string[]) : [];
+  return [...new Set([...seeds, ...(impactOf(job)?.nodes ?? [])])];
+}
+
+/** Puts graph.json with the provider (expiring with the other provider copies). */
+async function codeMapUpload(job: Job, ctx: AiContext, onOpenAI: boolean): Promise<{ id: string } | null> {
+  const graph = await readMapFile(job.task.project_id, 'graph.json');
+  if (!graph || graph.length > 30 * 1024 * 1024) return null;
+  return { id: await uploadProviderCopy(ctx, onOpenAI ? 'openai' : 'anthropic', graph, 'graph.json', 'application/json') };
+}
+
+function codeMapPrompt(job: Job, map: { id: string } | null, onOpenAI: boolean): string {
+  const impact = impactOf(job);
+  if (!map && !impact) return '';
+  const where = onOpenAI ? 'graph.json in the container\'s uploaded files (look under /mnt/data)' : CODE_MAP_MOUNT;
+  const g = onOpenAI ? '/mnt/data/graph.json' : CODE_MAP_MOUNT;
+  return [
+    '<code_map>',
+    impact ? `What depends on the files in the plan (from the project's code map):\n${impact.text}\n` : '',
+    map ? [
+      `A Graphify map of the repository's default branch is at ${where}. It is a reference, not part of the repository: never commit it, and trust the code where they differ.`,
+      'To look something up, install Graphify once (pip install -q graphifyy==0.9.69), then:',
+      `  graphify query "<question>" --graph ${g} --budget 1500   # the code a question is about`,
+      `  graphify explain "<symbol or file>" --graph ${g}           # one item and its connections`,
+      `  graphify path "<A>" "<B>" --graph ${g}                     # how two things connect`,
+      `  graphify affected "<symbol or file>" --graph ${g}          # what depends on it: check these still work after your change`,
+    ].join('\n') : '',
+    '</code_map>',
+  ].filter(Boolean).join('\n');
+}
+
 async function implementInSandbox(job: Job): Promise<Outcome> {
   const r = repoOf(job);
   const branch = branchFor(job);
@@ -544,6 +601,8 @@ async function implementInSandbox(job: Job): Promise<Outcome> {
     const engineer = await loadAgent(job.task.id, 'engineer');
     const memory = renderMemoryBlock(await recall(job.task.project_id, planned, 25));
     const docs = await readyAttachments(job.task.id);
+    // The code map goes into the sandbox too, for Graphify's own lookups.
+    const map = await codeMapUpload(job, ctx, onOpenAI).catch((e) => { console.error('code map upload failed', e); return null; });
     const prompt = [
       taskBrief(job),
       `<approved_plan version="${job.plan?.version}">\n${job.plan?.summary}\n\nSteps:\n${JSON.stringify(job.plan?.steps, null, 2)}\n\nFiles you may change:\n${planned.join('\n')}\n\nTesting plan: ${job.plan?.testing_plan ?? 'run the project checks'}\n</approved_plan>`,
@@ -552,6 +611,7 @@ async function implementInSandbox(job: Job): Promise<Outcome> {
         ? `<previous_attempt_failed>\n${state.repair_feedback}\n</previous_attempt_failed>\nFix the cause of these failures on the same branch.`
         : '',
       memory,
+      codeMapPrompt(job, map, onOpenAI),
       sandboxAttachmentPrompt(docs, onOpenAI ? 'openai' : 'claude'),
       `Branch: ${branch} (${exists ? 'exists — check it out and build on it' : `create it from ${r.defaultBranch}`}). Default branch: ${r.defaultBranch}. Push the branch when the checks pass.`,
     ].filter(Boolean).join('\n\n');
@@ -565,7 +625,7 @@ async function implementInSandbox(job: Job): Promise<Outcome> {
           repoFullName: `${r.owner}/${r.repo}`,
           token,
           prompt,
-          fileIds: await openaiSandboxFileIds(ctx, docs),
+          fileIds: [...await openaiSandboxFileIds(ctx, docs), ...(map ? [map.id] : [])],
         })), resourceId: null }
       : await startEngineerSession({
           ctx,
@@ -576,7 +636,7 @@ async function implementInSandbox(job: Job): Promise<Outcome> {
           token,
           prompt,
           title: `${reference(job)} — ${job.task.title}`,
-          files: await claudeSandboxMounts(ctx, docs),
+          files: [...await claudeSandboxMounts(ctx, docs), ...(map ? [{ type: 'file' as const, file_id: map.id, mount_path: CODE_MAP_MOUNT }] : [])],
         });
     const now = new Date().toISOString();
     await update(job, {
@@ -853,9 +913,10 @@ async function test(job: Job): Promise<Outcome> {
       `<approved_plan>\n${job.plan?.summary ?? ''}\n</approved_plan>`,
       `<diff>\n${diff}\n</diff>`,
       `<project_description path="AGENTSYNC.md">\n${(await projectDescription(job)) ?? '(this project has no AGENTSYNC.md yet)'}\n</project_description>`,
+      impactOf(job) ? `<code_map_impact>\nFrom the project's code map: what depends on the files this change touches. Check the diff doesn't break these callers, and look hardest at any hub.\n${impactOf(job)!.text}\n</code_map_impact>` : '',
       'Judge every acceptance criterion separately, and check the change against any attached documents too. verdict "submit" means ready for a person to approve the merge; "changes" means the Engineer should fix what you list; "reject" means the approach is wrong.',
       'Also choose the release bump, write the CHANGELOG entry, and — only if this change alters what the project does, its main parts or how to run it — the complete updated AGENTSYNC.md (keep its structure and everything still true; otherwise give an empty string).',
-    ].join('\n\n'),
+    ].filter(Boolean).join('\n\n'),
     schema: REVIEW_SCHEMA,
     maxTokens: 32000,
     attachments: await readyAttachments(job.task.id),
@@ -970,6 +1031,7 @@ async function describePullRequest(job: Job): Promise<Outcome> {
     `### Review — ${String(job.task.stage_state.review_verdict ?? 'n/a')}`,
     String(job.task.stage_state.review_summary ?? ''),
     '',
+    ...(impactOf(job) ? ['### Impact (code map)', impactOf(job)!.text, ''] : []),
     ...(version ? [`### Release ${version}`, entry + docsNote, ''] : []),
     '---',
     'This pull request is merged by AgentSync only after a person approves it in the control plane.',
@@ -1019,6 +1081,9 @@ async function ship(job: Job): Promise<Outcome> {
     sourceAgentKey: 'engineer',
     confidence: 0.6,
   }).catch((e) => console.error('could not write memory', e));
+
+  // The map nodes this task worked from were useful: `graphify reflect` learns from it.
+  await recordMapFeedback(job.task.id, 'useful', mapNodesOf(job)).catch(() => undefined);
 
   await sendCallback(job, 'completed', summary);
   await cleanupProviderFiles(aiContext(job), job.task.id).catch(() => undefined);

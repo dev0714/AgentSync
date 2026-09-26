@@ -1,22 +1,30 @@
 import 'server-only';
 import { Sandbox } from '@vercel/sandbox';
 import { installationToken, type Installation } from './github';
+import { affectedByFile, CodeGraph, formatAffected, nodesInFiles, query } from './graph-query';
+import { optionalSecret } from './secrets';
 import { serviceClient } from './supabase';
 
 /**
  * A map of each project's code, made with Graphify (https://github.com/Graphify-Labs/graphify).
  *
- * Code-only: Graphify parses the repository with tree-sitter — no AI model, no
- * API key, nothing sent anywhere but the sandbox. Each run happens in a Vercel
- * Sandbox that clones the repository with a short-lived GitHub App token:
+ * Graphify parses the repository with tree-sitter (code only: no documents,
+ * no AI extraction) in a Vercel Sandbox that clones it with a short-lived
+ * GitHub App token:
  *
  *   queued ─► running (sandbox started, Graphify detached) ─► ready | failed
  *
  * The worker's tick starts queued runs (a few at a time) and polls running
- * ones; a finished run's graph.json, graph.html and GRAPH_REPORT.md go to the
- * private project-maps bucket, with Graphify's cache so the next run only
- * re-parses what changed. Maps are made when a project is first imported,
- * after every merge, and on request.
+ * ones. A finished run leaves, in the private project-maps bucket: the graph
+ * (graph.json), its report, the interactive map, the hubs, a call-flow page, a
+ * file tree, a wiki, a picture, lessons from past tasks, and Graphify's cache
+ * so the next run only re-parses what changed. The one AI call is naming the
+ * groups (Claude Haiku), made only when the tenant has an Anthropic key.
+ *
+ * The agents use the graph through graph-query.ts: the part of the code a
+ * request is about, what depends on the files a plan changes, and the hubs.
+ * Maps are made when a project is first imported, after every merge, and on
+ * request.
  */
 
 export const GRAPHIFY_VERSION = '0.9.69';
@@ -25,6 +33,8 @@ const CONCURRENCY = Number(process.env.AGENTSYNC_MAP_CONCURRENCY ?? 2);
 const RUN_LIMIT_MS = 30 * 60_000;
 const OUT = '/tmp/agentsync';
 const MAX_FILE_BYTES = 95 * 1024 * 1024;
+/** Names the map's groups when the tenant has an Anthropic key: a couple of short calls per run. */
+const LABEL_MODEL = 'claude-haiku-4-5';
 
 const db = () => serviceClient();
 
@@ -69,11 +79,22 @@ async function setMap(projectId: string, fields: Record<string, unknown>) {
 // The whole run, detached inside the sandbox. It never fails the shell: it
 // records its exit code in exit.txt, which the worker polls for.
 //
-// Verified against graphifyy 0.9.69: `extract --code-only` parses the code
-// (tree-sitter, [sql] adds SQL) and writes graph.json; `cluster-only` writes
-// GRAPH_REPORT.md and graph.html. With no AI key and no `claude` CLI in the
-// sandbox, subsystems are named after their most-connected item — no model is
-// called and the report shows a token cost of 0. `env -i` makes sure of it.
+// Verified against graphifyy 0.9.69:
+//   extract --code-only   parses the code (tree-sitter; [sql] adds SQL) → graph.json
+//   cluster-only          groups it → GRAPH_REPORT.md, graph.html; groups are
+//                         named after their most-connected item (no model)
+// Then, none of which can fail the run (their output goes to extras.txt):
+//   label                 AI names for the groups (Claude Haiku), only when the
+//                         tenant has an Anthropic key; on failure the item-named
+//                         outputs are put back
+//   god-nodes --json      the most-connected code (hubs)
+//   export callflow-html  architecture / call-flow diagrams (Mermaid)
+//   tree                  collapsible file → symbol tree (D3)
+//   export wiki           one article per group, packed into wiki.json
+//   export svg            a static picture of the graph (matplotlib, scipy)
+//   reflect               lessons from past tasks (AgentSync writes them as
+//                         Graphify memory files before the run)
+// Every graphify call runs under `env -i`: no key reaches it except label's.
 const SCRIPT = `
 set -u
 mkdir -p ${OUT}
@@ -84,14 +105,14 @@ PY="$(command -v python3)"
   # pip (fetched first if missing) installs Graphify into a folder of its own.
   if "$PY" -m venv /tmp/graphify-venv >/dev/null 2>&1 && [ -x /tmp/graphify-venv/bin/python ]; then
     RUNPY=/tmp/graphify-venv/bin/python
-    "$RUNPY" -m pip install --quiet --disable-pip-version-check "graphifyy[sql]==${GRAPHIFY_VERSION}"
+    "$RUNPY" -m pip install --quiet --disable-pip-version-check "graphifyy[sql,anthropic]==${GRAPHIFY_VERSION}" matplotlib scipy
   else
     rm -rf /tmp/graphify-venv
     if ! "$PY" -m pip --version >/dev/null 2>&1; then
       curl -sSfL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py &&
       PIP_BREAK_SYSTEM_PACKAGES=1 "$PY" /tmp/get-pip.py --quiet --user
     fi &&
-    PIP_BREAK_SYSTEM_PACKAGES=1 "$PY" -m pip install --quiet --disable-pip-version-check --target /tmp/graphify-lib "graphifyy[sql]==${GRAPHIFY_VERSION}" &&
+    PIP_BREAK_SYSTEM_PACKAGES=1 "$PY" -m pip install --quiet --disable-pip-version-check --target /tmp/graphify-lib "graphifyy[sql,anthropic]==${GRAPHIFY_VERSION}" matplotlib scipy &&
     RUNPY="$PY"
   fi &&
   # The sandbox's Python is built without the bz2/lzma C modules. NetworkX
@@ -119,18 +140,117 @@ for name, body in stubs.items():
         with open(os.path.join("/tmp/graphify-stubs", name + ".py"), "w") as f:
             f.write(body)
 STUBS
+  G() { env -i HOME=/tmp PATH=/usr/local/bin:/usr/bin:/bin PYTHONPATH=/tmp/graphify-lib:/tmp/graphify-stubs MPLBACKEND=Agg "$RUNPY" -m graphify "$@"; } &&
   if [ -f ${OUT}/cache.in.tgz ]; then tar -xzf ${OUT}/cache.in.tgz; fi &&
   UPDATE="" && if [ -f graphify-out/manifest.json ] && [ -f graphify-out/graph.json ]; then UPDATE="--update"; fi &&
-  env -i HOME=/tmp PATH=/usr/local/bin:/usr/bin:/bin PYTHONPATH=/tmp/graphify-lib:/tmp/graphify-stubs "$RUNPY" -m graphify extract . --code-only $UPDATE &&
-  env -i HOME=/tmp PATH=/usr/local/bin:/usr/bin:/bin PYTHONPATH=/tmp/graphify-lib:/tmp/graphify-stubs "$RUNPY" -m graphify cluster-only .
+  G extract . --code-only $UPDATE &&
+  G cluster-only .
 } > ${OUT}/log.txt 2>&1
 code=$?
 git rev-parse HEAD > ${OUT}/commit.txt 2>/dev/null
 if [ $code -eq 0 ]; then
+  {
+    if [ -n "\${LABEL_KEY:-}" ]; then
+      mkdir -p /tmp/before-label && cp -a graphify-out/GRAPH_REPORT.md graphify-out/graph.json graphify-out/graph.html /tmp/before-label/ 2>/dev/null
+      env -i HOME=/tmp PATH=/usr/local/bin:/usr/bin:/bin PYTHONPATH=/tmp/graphify-lib:/tmp/graphify-stubs ANTHROPIC_API_KEY="$LABEL_KEY" \\
+        "$RUNPY" -m graphify label . --backend claude --model ${LABEL_MODEL} > ${OUT}/label.txt 2>&1
+        lc=$?
+      if [ $lc -ne 0 ] || grep -qi "labeling failed\\|batch .* failed" ${OUT}/label.txt; then
+        cp -a /tmp/before-label/. graphify-out/ && rm -f graphify-out/.graphify_labels.json graphify-out/.graphify_labels.json.sig
+        echo failed > ${OUT}/label.status
+      else
+        echo ok > ${OUT}/label.status
+      fi
+    fi
+    unset LABEL_KEY
+    # The exports below read group names from a labels file, which Graphify
+    # only keeps for AI names: give them the names graph.json carries.
+    env -i PROJECT_NAME="\${PROJECT_NAME:-}" "$RUNPY" - <<'LABELS' || true
+import json, os
+g = json.load(open("graphify-out/graph.json", encoding="utf-8"))
+names = {}
+for n in g.get("nodes", []):
+    if n.get("community") is not None and n.get("community_name"):
+        names.setdefault(str(n["community"]), n["community_name"])
+json.dump(names, open("/tmp/labels.json", "w", encoding="utf-8"), ensure_ascii=False)
+# Call-flow's own sections are keyword guesses tuned to Graphify's codebase:
+# give it this project's largest subsystems instead, and its name.
+sizes = {}
+for n in g.get("nodes", []):
+    if n.get("community") is not None:
+        sizes[n["community"]] = sizes.get(n["community"], 0) + 1
+ranked = sorted(sizes, key=lambda c: -sizes[c])
+sections = [{"id": "overview", "name": "Architecture Overview", "communities": []}]
+sections += [{"id": "c%s" % c, "name": names.get(str(c), "Subsystem %s" % c), "communities": [c]} for c in ranked[:14]]
+if ranked[14:]:
+    sections.append({"id": "other", "name": "Other", "communities": ranked[14:]})
+json.dump(sections, open("/tmp/sections.json", "w", encoding="utf-8"), ensure_ascii=False)
+g["project_name"] = os.environ.get("PROJECT_NAME") or "Project"
+json.dump(g, open("/tmp/graph-named.json", "w", encoding="utf-8"), ensure_ascii=False)
+LABELS
+    L="--labels /tmp/labels.json"
+    G god-nodes --top 30 --json > ${OUT}/hubs.json || rm -f ${OUT}/hubs.json
+    G export callflow-html /tmp/graph-named.json $L --sections /tmp/sections.json --report graphify-out/GRAPH_REPORT.md --output ${OUT}/callflow.html || true
+    G tree --graph graphify-out/graph.json --output ${OUT}/tree.html --label "\${PROJECT_NAME:-project}" || true
+    G export wiki --graph graphify-out/graph.json $L && env -i "$RUNPY" - <<'WIKI' || true
+import json, os
+d = "graphify-out/wiki"
+out = {f: open(os.path.join(d, f), encoding="utf-8").read() for f in sorted(os.listdir(d)) if f.endswith(".md")}
+json.dump(out, open("${OUT}/wiki.json", "w", encoding="utf-8"), ensure_ascii=False)
+WIKI
+    # A picture of a big graph is slow to draw and heavy to open: capped at 5 minutes.
+    timeout 300 env -i HOME=/tmp PATH=/usr/local/bin:/usr/bin:/bin PYTHONPATH=/tmp/graphify-lib:/tmp/graphify-stubs MPLBACKEND=Agg "$RUNPY" -m graphify export svg --graph graphify-out/graph.json $L && cp graphify-out/graph.svg ${OUT}/graph.svg || true
+    if ls ${OUT}/memory/*.md >/dev/null 2>&1; then
+      mkdir -p graphify-out/memory && cp ${OUT}/memory/*.md graphify-out/memory/ &&
+      G reflect --graph graphify-out/graph.json --out ${OUT}/LESSONS.md || true
+    fi
+  } > ${OUT}/extras.txt 2>&1
   tar -czf ${OUT}/cache.tgz graphify-out/cache graphify-out/manifest.json graphify-out/graph.json 2>/dev/null || true
 fi
 echo $code > ${OUT}/exit.txt
 `;
+
+/** A past task's outcome, as a Graphify memory file (the format `graphify save-result` writes). */
+function memoryFile(f: FeedbackRow): string {
+  const q = (v: string) => JSON.stringify(v.replace(/[\r\n]+/g, ' '));
+  return [
+    '---',
+    'type: "query"',
+    `date: ${q(f.created_at)}`,
+    `question: ${q(f.question)}`,
+    'contributor: "agentsync"',
+    `outcome: ${q(f.outcome)}`,
+    ...(f.correction ? [`correction: ${q(f.correction)}`] : []),
+    `source_nodes: [${f.source_nodes.map(q).join(', ')}]`,
+    '---',
+    '',
+    `# Q: ${f.question.replace(/[\r\n]+/g, ' ')}`,
+    '',
+    '## Answer',
+    '',
+    f.answer ?? '',
+    '',
+    '## Outcome',
+    '',
+    `- Signal: ${f.outcome}`,
+    ...(f.correction ? [`- Correction: ${f.correction.replace(/[\r\n]+/g, ' ')}`] : []),
+    '',
+    '## Source Nodes',
+    '',
+    ...f.source_nodes.map((n) => `- ${n}`),
+    '',
+  ].join('\n');
+}
+
+type FeedbackRow = {
+  id: string;
+  question: string;
+  answer: string | null;
+  source_nodes: string[];
+  outcome: 'useful' | 'dead_end' | 'corrected';
+  correction: string | null;
+  created_at: string;
+};
 
 async function start(row: MapRow): Promise<void> {
   const { data } = await db().rpc('agentsync_project_context', { p_project_id: row.project_id });
@@ -145,6 +265,10 @@ async function start(row: MapRow): Promise<void> {
   if (claimed !== true) return;
 
   try {
+    const { data: inputs } = await db().rpc('agentsync_map_inputs', { p_project_id: row.project_id });
+    const { anthropic_key_reference: keyRef, feedback } = (inputs ?? {}) as { anthropic_key_reference?: string | null; feedback?: FeedbackRow[] };
+    const labelKey = await optionalSecret(keyRef ?? null) ?? process.env.ANTHROPIC_API_KEY ?? null;
+
     const token = await installationToken(ctx.github);
     const sandbox = await Sandbox.create({
       name,
@@ -163,15 +287,25 @@ async function start(row: MapRow): Promise<void> {
       ...credentials(),
     });
 
+    await sandbox.runCommand({ cmd: 'mkdir', args: ['-p', `${OUT}/memory`] });
+    const files: { path: string; content: Buffer }[] = [];
     // The previous run's cache, so this run only re-parses what changed.
     if (row.files?.['cache.tgz']) {
       const { data: cache } = await db().storage.from(MAP_BUCKET).download(`${row.project_id}/cache.tgz`);
-      if (cache) {
-        await sandbox.runCommand({ cmd: 'mkdir', args: ['-p', OUT] });
-        await sandbox.writeFiles([{ path: `${OUT}/cache.in.tgz`, content: Buffer.from(await cache.arrayBuffer()) }]);
-      }
+      if (cache) files.push({ path: `${OUT}/cache.in.tgz`, content: Buffer.from(await cache.arrayBuffer()) });
     }
-    await sandbox.runCommand({ cmd: 'bash', args: ['-c', SCRIPT], detached: true });
+    // Past tasks' outcomes, for `graphify reflect`.
+    for (const f of feedback ?? []) {
+      files.push({ path: `${OUT}/memory/${f.created_at.slice(0, 10)}_${f.id.slice(0, 8)}.md`, content: Buffer.from(memoryFile(f)) });
+    }
+    if (files.length) await sandbox.writeFiles(files);
+
+    await sandbox.runCommand({
+      cmd: 'bash',
+      args: ['-c', SCRIPT],
+      detached: true,
+      env: { PROJECT_NAME: ctx.project.name, ...(labelKey ? { LABEL_KEY: labelKey } : {}) },
+    });
   } catch (e) {
     await setMap(row.project_id, { status: 'failed', error: `Could not start the sandbox: ${(e as Error).message}`.slice(0, 1000), finished_at: new Date().toISOString() });
   }
@@ -192,6 +326,20 @@ function statsOf(graph: Graph): Record<string, number> {
   return { nodes: nodes.length, edges: edges.length, communities: communities.size, files: files.size };
 }
 
+/** Everything a run can leave behind: [stored name, path in the sandbox, type]. */
+const OUTPUTS: [string, string, string][] = [
+  ['graph.json', '/vercel/sandbox/graphify-out/graph.json', 'application/json'],
+  ['graph.html', '/vercel/sandbox/graphify-out/graph.html', 'text/html'],
+  ['GRAPH_REPORT.md', '/vercel/sandbox/graphify-out/GRAPH_REPORT.md', 'text/markdown'],
+  ['cache.tgz', `${OUT}/cache.tgz`, 'application/gzip'],
+  ['hubs.json', `${OUT}/hubs.json`, 'application/json'],
+  ['callflow.html', `${OUT}/callflow.html`, 'text/html'],
+  ['tree.html', `${OUT}/tree.html`, 'text/html'],
+  ['wiki.json', `${OUT}/wiki.json`, 'application/json'],
+  ['graph.svg', `${OUT}/graph.svg`, 'image/svg+xml'],
+  ['LESSONS.md', `${OUT}/LESSONS.md`, 'text/markdown'],
+];
+
 async function finish(row: MapRow, sandbox: Sandbox, exitCode: number): Promise<void> {
   const read = (path: string) => sandbox.readFileToBuffer({ path }).catch(() => null);
   const commit = (await read(`${OUT}/commit.txt`))?.toString('utf8').trim() || null;
@@ -206,17 +354,15 @@ async function finish(row: MapRow, sandbox: Sandbox, exitCode: number): Promise<
     return;
   }
 
-  const outputs: [string, string, string][] = [
-    ['graph.json', '/vercel/sandbox/graphify-out/graph.json', 'application/json'],
-    ['graph.html', '/vercel/sandbox/graphify-out/graph.html', 'text/html'],
-    ['GRAPH_REPORT.md', '/vercel/sandbox/graphify-out/GRAPH_REPORT.md', 'text/markdown'],
-    ['cache.tgz', `${OUT}/cache.tgz`, 'application/gzip'],
-  ];
   const files: Record<string, number> = {};
-  let stats: Record<string, number> | null = null;
-  for (const [key, path, type] of outputs) {
+  let stats: Record<string, number | string> | null = null;
+  for (const [key, path, type] of OUTPUTS) {
     const buf = await read(path);
-    if (!buf || buf.length > MAX_FILE_BYTES) continue;
+    if (!buf || buf.length > MAX_FILE_BYTES) {
+      // A file this run didn't make isn't left over from an earlier one.
+      if (row.files?.[key]) await db().storage.from(MAP_BUCKET).remove([`${row.project_id}/${key}`]).catch(() => undefined);
+      continue;
+    }
     const { error } = await db().storage.from(MAP_BUCKET).upload(`${row.project_id}/${key}`, buf, { contentType: type, upsert: true });
     if (error) throw error;
     files[key] = buf.length;
@@ -232,6 +378,9 @@ async function finish(row: MapRow, sandbox: Sandbox, exitCode: number): Promise<
     await setMap(row.project_id, { status: 'failed', error: 'Graphify finished but wrote no graph.', finished_at: new Date().toISOString() });
     return;
   }
+  // How the groups got their names: by Claude, or after their main item.
+  const label = (await read(`${OUT}/label.status`))?.toString('utf8').trim();
+  if (stats) stats.labels = label === 'ok' ? LABEL_MODEL : label === 'failed' ? 'failed' : 'items';
   const now = new Date().toISOString();
   await setMap(row.project_id, {
     status: row.rerun ? 'queued' : 'ready',
@@ -296,53 +445,169 @@ export async function tickMaps(): Promise<{ polled: number; started: number } | 
   return { polled: work.running.length, started: work.queued.length };
 }
 
+/* ---- reading a map --------------------------------------------------------- */
+
+type MapInfo = { files?: Record<string, number> | null; commit_sha?: string | null; mapped_at?: string | null };
+
+async function mapInfo(projectId: string): Promise<MapInfo | null> {
+  const { data } = await db().rpc('agentsync_map_get', { p_project_id: projectId });
+  return (data as MapInfo | null) ?? null;
+}
+
+/** One stored output of the project's current map, or null. */
+export async function readMapFile(projectId: string, name: string): Promise<Buffer | null> {
+  const { data } = await db().storage.from(MAP_BUCKET).download(`${projectId}/${name}`);
+  return data ? Buffer.from(await data.arrayBuffer()) : null;
+}
+
+// Parsed graphs, kept while this server instance is warm (keyed by map time).
+const graphs = new Map<string, { at: string; graph: CodeGraph }>();
+
+/** The project's code graph, or null when it has no map (or one too big to load here). */
+export async function loadCodeGraph(projectId: string): Promise<CodeGraph | null> {
+  const info = await mapInfo(projectId);
+  const size = info?.files?.['graph.json'];
+  if (!size || size > 60 * 1024 * 1024) return null;
+  const at = info?.mapped_at ?? '';
+  const cached = graphs.get(projectId);
+  if (cached && cached.at === at) return cached.graph;
+  const raw = await readMapFile(projectId, 'graph.json');
+  if (!raw) return null;
+  try {
+    const graph = CodeGraph.parse(raw.toString('utf8'));
+    if (graphs.size > 20) graphs.delete(graphs.keys().next().value!);
+    graphs.set(projectId, { at, graph });
+    return graph;
+  } catch {
+    return null;
+  }
+}
+
+export type Hub = { id: string; label: string; degree: number; source_file: string | null };
+
+/** The most-connected code (`graphify god-nodes`), without package references. */
+export async function projectHubs(projectId: string, graph?: CodeGraph | null): Promise<Hub[]> {
+  const raw = await readMapFile(projectId, 'hubs.json').catch(() => null);
+  if (!raw) return [];
+  try {
+    const g = graph === undefined ? await loadCodeGraph(projectId) : graph;
+    return (JSON.parse(raw.toString('utf8')) as { id: string; label: string; degree: number }[])
+      .map((h) => ({ ...h, source_file: g?.nodes.get(h.id)?.source_file ?? null }))
+      .filter((h) => h.source_file);
+  } catch {
+    return [];
+  }
+}
+
 /* ---- for the agents ------------------------------------------------------ */
 
-type Node = { id: string; label: string; file: string | null };
+export type MapBriefing = {
+  /** Text for the Analyst/Planner. */
+  text: string;
+  /** Labels of the nodes the briefing started from (recorded with the task's outcome). */
+  seeds: string[];
+};
 
 /**
- * What the Analyst and Planner get from the map: the report, and the
- * connections around the files a request touches.
+ * What the Analyst and Planner get from the map, all computed here from
+ * graph.json: the report, lessons from past tasks, the graph around the
+ * request (`query`), and what depends on the files it looks likely to touch
+ * (`affected`).
  */
-export async function mapContext(projectId: string, relevantPaths: string[]): Promise<string | null> {
-  const { data } = await db().rpc('agentsync_map_get', { p_project_id: projectId });
-  const map = data as { files?: Record<string, number> | null; commit_sha?: string | null } | null;
-  if (!map?.files) return null;
+export async function mapBriefing(projectId: string, request: string, relevantPaths: string[]): Promise<MapBriefing | null> {
+  const info = await mapInfo(projectId);
+  if (!info?.files) return null;
   const parts: string[] = [];
+  const seeds: string[] = [];
 
-  if (map.files['GRAPH_REPORT.md']) {
-    const { data: report } = await db().storage.from(MAP_BUCKET).download(`${projectId}/GRAPH_REPORT.md`);
-    if (report) parts.push(`## Code map report (Graphify, commit ${map.commit_sha?.slice(0, 7) ?? '?'})\n\n${(await report.text()).slice(0, 8000)}`);
+  if (info.files['GRAPH_REPORT.md']) {
+    const report = await readMapFile(projectId, 'GRAPH_REPORT.md');
+    if (report) parts.push(`## Code map report (Graphify, commit ${info.commit_sha?.slice(0, 7) ?? '?'})\n\n${report.toString('utf8').slice(0, 6000)}`);
+  }
+  if (info.files['LESSONS.md']) {
+    const lessons = await readMapFile(projectId, 'LESSONS.md');
+    if (lessons) parts.push(`## Lessons from earlier tasks on this project (graphify reflect)\n\n${lessons.toString('utf8').slice(0, 3000)}`);
   }
 
-  if (map.files['graph.json'] && relevantPaths.length && map.files['graph.json'] < 60 * 1024 * 1024) {
-    const { data: raw } = await db().storage.from(MAP_BUCKET).download(`${projectId}/graph.json`);
-    if (raw) {
-      try {
-        const graph = JSON.parse(await raw.text()) as Graph;
-        const nodes = new Map<string, Node>();
-        for (const n of (graph.nodes ?? []) as Record<string, unknown>[]) {
-          const id = String(n.id ?? '');
-          if (!id) continue;
-          const file = (n.source_file ?? n.file ?? n.path ?? null) as string | null;
-          nodes.set(id, { id, label: String(n.label ?? n.name ?? id), file });
-        }
-        const wanted = new Set(relevantPaths.map((p) => p.replace(/^\.\//, '')));
-        const touches = (n: Node | undefined) => Boolean(n?.file && [...wanted].some((p) => n.file!.endsWith(p)));
-        const lines: string[] = [];
-        for (const e of ((graph.links ?? graph.edges ?? []) as Record<string, unknown>[])) {
-          const s = nodes.get(String(typeof e.source === 'object' ? (e.source as { id?: unknown })?.id : e.source));
-          const t = nodes.get(String(typeof e.target === 'object' ? (e.target as { id?: unknown })?.id : e.target));
-          if (!s || !t || !(touches(s) || touches(t))) continue;
-          const rel = String(e.relation ?? e.type ?? e.label ?? 'relates to');
-          lines.push(`- ${s.label}${s.file ? ` (${s.file})` : ''} —${rel}→ ${t.label}${t.file ? ` (${t.file})` : ''}`);
-          if (lines.length >= 120) break;
-        }
-        if (lines.length) parts.push(`## Connections around the files this request touches\n\n${lines.join('\n')}`);
-      } catch {
-        // a map we can't read is no map
-      }
+  const graph = await loadCodeGraph(projectId);
+  if (graph) {
+    const q = query(graph, request, { depth: 2, budget: 1500 });
+    if (q.seeds.length) {
+      seeds.push(...q.seeds.map((s) => s.label));
+      parts.push(`## The part of the code this request is about (graphify query)\n\n${q.text}`);
     }
+    const deps: string[] = [];
+    for (const path of relevantPaths.slice(0, 6)) {
+      const hits = affectedByFile(graph, path);
+      if (hits.length) deps.push(`### ${path}\n${formatAffected(graph, path, hits, 15)}`);
+    }
+    if (deps.length) parts.push(`## What depends on the files that look relevant (graphify affected)\n\n${deps.join('\n\n')}`);
   }
-  return parts.length ? parts.join('\n\n') : null;
+  return parts.length ? { text: parts.join('\n\n'), seeds } : null;
+}
+
+export type Impact = {
+  /** Markdown: what else the plan's files affect, and which hubs it touches. */
+  text: string;
+  dependents: number;
+  hubs: Hub[];
+  /** Node labels in the planned files, recorded with the task's outcome. */
+  nodes: string[];
+};
+
+/**
+ * The blast radius of a plan: everything that depends on the files it
+ * changes (`affected`, two steps), and the hubs among them — the code most of
+ * the project leans on, where a change needs the closest review.
+ */
+export async function planImpact(projectId: string, files: string[]): Promise<Impact | null> {
+  const graph = await loadCodeGraph(projectId);
+  if (!graph || !files.length) return null;
+  const hubs = await projectHubs(projectId, graph);
+  const inPlan = nodesInFiles(graph, files);
+  const touchedHubs = hubs.filter((h) => inPlan.some((n) => n.id === h.id));
+  const sections: string[] = [];
+  const outside = new Set<string>();
+  let dependents = 0;
+  for (const path of files) {
+    const hits = affectedByFile(graph, path).filter((h) => !files.some((f) => h.node.source_file && (f === h.node.source_file || f.endsWith(`/${h.node.source_file}`))));
+    dependents += hits.length;
+    for (const h of hits) if (h.node.source_file) outside.add(h.node.source_file);
+    if (hits.length) sections.push(`**${path}** — ${hits.length} dependent${hits.length === 1 ? '' : 's'} outside the plan\n${formatAffected(graph, path, hits, 12)}`);
+  }
+  const lines: string[] = [];
+  if (touchedHubs.length) {
+    lines.push(`⚠ Changes a hub — code much of the project depends on: ${touchedHubs.map((h) => `\`${h.label}\` (${h.degree} connections, ${h.source_file})`).join(', ')}. Review callers carefully.`);
+  }
+  const otherFiles = outside.size;
+  lines.push(dependents
+    ? `${dependents} piece${dependents === 1 ? '' : 's'} of code in ${otherFiles} other file${otherFiles === 1 ? '' : 's'} depend on what this plan changes.`
+    : 'Nothing outside the plan depends on the files it changes.');
+  if (sections.length) lines.push('', ...sections);
+  return {
+    text: lines.join('\n'),
+    dependents,
+    hubs: touchedHubs,
+    nodes: [...new Set(inPlan.map((n) => n.label))].slice(0, 40),
+  };
+}
+
+/** Records a finished task's outcome against the map nodes it worked from. */
+export async function recordMapFeedback(taskId: string, outcome: 'useful' | 'dead_end' | 'corrected', nodes: string[], correction?: string | null) {
+  if (!nodes.length) return;
+  await db().rpc('agentsync_map_feedback_add', {
+    p_task_id: taskId,
+    p_outcome: outcome,
+    p_nodes: [...new Set(nodes)].slice(0, 40),
+    p_correction: correction ?? null,
+  });
+}
+
+/** For multi-repository routing: the code in each candidate that best matches a ticket. */
+export async function codeMatches(projectId: string, ticket: string): Promise<string | null> {
+  const graph = await loadCodeGraph(projectId);
+  if (!graph) return null;
+  const q = query(graph, ticket, { depth: 1, budget: 250 });
+  if (!q.seeds.length) return null;
+  return q.seeds.map((s) => `${s.label}${s.source_file ? ` (${s.source_file})` : ''}`).join('; ');
 }

@@ -401,10 +401,24 @@ type MapRow = {
   mapped_at: string | null;
   started_at: string | null;
   graphify_version: string | null;
-  stats: { nodes?: number; edges?: number; communities?: number; files?: number } | null;
+  stats: { nodes?: number; edges?: number; communities?: number; files?: number; labels?: string } | null;
   files: Record<string, number> | null;
   error: string | null;
 };
+
+type MapView = 'report' | 'graph' | 'callflow' | 'tree' | 'wiki' | 'svg' | 'hubs' | 'lessons' | 'ask';
+
+const MAP_VIEWS: { key: MapView; label: string; file: string | null }[] = [
+  { key: 'report', label: 'Report', file: 'GRAPH_REPORT.md' },
+  { key: 'graph', label: 'Interactive map', file: 'graph.html' },
+  { key: 'callflow', label: 'Call flow', file: 'callflow.html' },
+  { key: 'tree', label: 'File tree', file: 'tree.html' },
+  { key: 'wiki', label: 'Wiki', file: 'wiki.json' },
+  { key: 'hubs', label: 'Hubs', file: 'hubs.json' },
+  { key: 'lessons', label: 'Lessons', file: 'LESSONS.md' },
+  { key: 'svg', label: 'Picture', file: 'graph.svg' },
+  { key: 'ask', label: 'Ask the map', file: 'graph.json' },
+];
 
 function ProjectMap({ projectId, tenantSlug }: { projectId: string; tenantSlug: string | null }) {
   const [map, setMap] = useState<MapRow | null>(null);
@@ -413,7 +427,7 @@ function ProjectMap({ projectId, tenantSlug }: { projectId: string; tenantSlug: 
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [view, setView] = useState<'report' | 'graph'>('report');
+  const [view, setView] = useState<MapView>('report');
   const q = `tenant=${encodeURIComponent(tenantSlug ?? '')}`;
 
   const load = useCallback(async () => {
@@ -450,7 +464,7 @@ function ProjectMap({ projectId, tenantSlug }: { projectId: string; tenantSlug: 
       setNotice(body.error === 'NOT_AUTHORISED' ? 'Only a tenant admin can do this.' : `Could not start (${body.error ?? res.status}).`);
       return;
     }
-    setNotice(all ? `${body.queued} projects queued. Two are mapped at a time, a few minutes each.` : 'Mapping has started. This takes a few minutes.');
+    setNotice(all ? `${body.queued} projects queued. Two are mapped at a time, a few minutes each.` : 'Mapping has started. This takes a few minutes; the current map stays until the new one is ready.');
     await load();
   }
 
@@ -458,6 +472,9 @@ function ProjectMap({ projectId, tenantSlug }: { projectId: string; tenantSlug: 
 
   const going = map?.status === 'queued' || map?.status === 'running';
   const hasMap = Boolean(map?.files?.['GRAPH_REPORT.md'] || map?.files?.['graph.json']);
+  const views = MAP_VIEWS.filter((v) => !v.file || map?.files?.[v.file]);
+  const labels = map?.stats?.labels;
+  const base = `/api/portal/projects/${projectId}/map`;
 
   return (
     <div className="flex flex-col gap-3">
@@ -467,6 +484,7 @@ function ProjectMap({ projectId, tenantSlug }: { projectId: string; tenantSlug: 
             Mapped <Ago iso={map!.mapped_at} />
             {map!.commit_sha ? <> from <span className="mono">{map!.commit_sha.slice(0, 7)}</span></> : null}
             {map!.stats?.nodes ? ` · ${map!.stats.nodes.toLocaleString()} items, ${(map!.stats.edges ?? 0).toLocaleString()} connections${map!.stats.communities ? `, ${map!.stats.communities} subsystems` : ''}` : ''}
+            {labels && labels !== 'items' && labels !== 'failed' ? ` · subsystems named by ${labels}` : ''}
           </span>
         ) : (
           <span className="text-[13px] text-ink-2">No map yet.</span>
@@ -474,11 +492,6 @@ function ProjectMap({ projectId, tenantSlug }: { projectId: string; tenantSlug: 
         {going ? <Pill c={['#fbe7da', '#963510']}>{map!.status === 'queued' ? 'Waiting to map' : 'Mapping…'}</Pill> : null}
         {map?.status === 'failed' ? <Pill c={['#fbe3e1', '#b42318']}>Last run failed</Pill> : null}
         <div className="ml-auto flex gap-2">
-          {hasMap ? (
-            <button className="btn min-h-[38px] px-3 text-[13.5px]" onClick={() => setView(view === 'report' ? 'graph' : 'report')}>
-              {view === 'report' ? 'Interactive map' : 'Report'}
-            </button>
-          ) : null}
           <button className="btn min-h-[38px] px-3 text-[13.5px]" disabled={Boolean(busy) || going || !available} onClick={() => void run(false)}>
             {busy === 'one' ? 'Starting…' : hasMap ? 'Map again' : 'Map this project'}
           </button>
@@ -497,29 +510,223 @@ function ProjectMap({ projectId, tenantSlug }: { projectId: string; tenantSlug: 
       {map?.status === 'failed' && map.error ? (
         <pre className="mono m-0 max-h-[180px] overflow-auto rounded-md border border-[#e7b8b2] bg-danger-tint p-3 text-[12px] whitespace-pre-wrap text-danger-ink">{map.error}</pre>
       ) : null}
+      {labels === 'failed' ? (
+        <div className="rounded-md border border-line bg-raised px-3 py-2 text-[13px] text-ink-2">
+          Claude could not name the subsystems on the last run (check the tenant&apos;s Anthropic key and credits), so they are named after their main item.
+        </div>
+      ) : null}
 
       {!hasMap ? (
         <p className="m-0 max-w-[75ch] text-[14px] text-muted" style={{ lineHeight: 1.6 }}>
           A map shows how this project&apos;s code fits together: its main pieces, the subsystems they form and how they connect.
-          AgentSync makes it with Graphify, which parses the code in a private sandbox, with no AI model and no cost per run.
-          It is remade after every change AgentSync merges, and the agents read it before planning.
+          AgentSync makes it with Graphify, which parses the code in a private sandbox; the only AI call names the subsystems
+          (Claude Haiku, when the tenant has an Anthropic key). It is remade after every change AgentSync merges, and the agents
+          use it to plan changes and check what else they affect.
         </p>
-      ) : view === 'graph' && map?.files?.['graph.html'] ? (
-        <iframe
-          title="Interactive code map"
-          src={`/api/portal/projects/${projectId}/map/graph?${q}`}
-          sandbox="allow-scripts allow-popups"
-          className="h-[640px] w-full rounded-md border border-line bg-card"
-        />
-      ) : view === 'graph' ? (
-        <div className="text-[14px] text-muted">This map has no interactive view (it was too large to keep).</div>
-      ) : report ? (
-        <article className="md-doc rounded-md border border-line bg-card px-5 py-4">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{report}</ReactMarkdown>
-        </article>
       ) : (
-        <div className="text-[14px] text-muted">The map has no report.</div>
+        <>
+          <div className="flex flex-wrap gap-1.5" role="tablist">
+            {views.map((v) => (
+              <button
+                key={v.key}
+                role="tab"
+                aria-selected={view === v.key}
+                className={`rounded-full border px-3 py-1 text-[13px] ${view === v.key ? 'border-ink bg-ink text-card' : 'border-line bg-card text-ink-2 hover:bg-raised'}`}
+                onClick={() => setView(v.key)}
+              >
+                {v.label}
+              </button>
+            ))}
+          </div>
+          {view === 'report' ? (
+            report ? (
+              <article className="md-doc rounded-md border border-line bg-card px-5 py-4">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{report}</ReactMarkdown>
+              </article>
+            ) : <div className="text-[14px] text-muted">The map has no report.</div>
+          ) : view === 'graph' || view === 'callflow' || view === 'tree' ? (
+            <div className="flex flex-col gap-1.5">
+              <iframe
+                key={view}
+                title={MAP_VIEWS.find((v) => v.key === view)!.label}
+                src={`${base}/${view}?${q}`}
+                sandbox="allow-scripts allow-popups"
+                className="h-[680px] w-full rounded-md border border-line bg-card"
+              />
+              <a className="self-end text-[12.5px] text-muted underline" href={`${base}/${view}?${q}&download=1`}>Download this page</a>
+            </div>
+          ) : view === 'svg' ? (
+            <div className="flex flex-col gap-1.5">
+              <div className="max-h-[680px] overflow-auto rounded-md border border-line bg-white">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img alt="Picture of the code map" src={`${base}/svg?${q}`} className="block max-w-none" style={{ width: '1600px' }} />
+              </div>
+              <a className="self-end text-[12.5px] text-muted underline" href={`${base}/svg?${q}&download=1`}>Download the SVG</a>
+            </div>
+          ) : view === 'wiki' ? (
+            <MapWiki base={base} q={q} />
+          ) : view === 'hubs' ? (
+            <MapHubs base={base} q={q} />
+          ) : view === 'lessons' ? (
+            <MapLessons base={base} q={q} />
+          ) : (
+            <MapAsk base={base} tenantSlug={tenantSlug} />
+          )}
+        </>
       )}
+    </div>
+  );
+}
+
+function useMapData<T>(url: string): T | null | undefined {
+  const [data, setData] = useState<T | null | undefined>(undefined);
+  useEffect(() => {
+    let live = true;
+    void fetch(url, { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((b) => { if (live) setData((b as T) ?? null); })
+      .catch(() => { if (live) setData(null); });
+    return () => { live = false; };
+  }, [url]);
+  return data;
+}
+
+function MapWiki({ base, q }: { base: string; q: string }) {
+  const data = useMapData<{ wiki: Record<string, string> | null }>(`${base}/data/wiki?${q}`);
+  const [article, setArticle] = useState('index.md');
+  if (data === undefined) return <div className="text-[14px] text-muted">Loading…</div>;
+  const wiki = data?.wiki;
+  if (!wiki) return <div className="text-[14px] text-muted">This map has no wiki.</div>;
+  const text = wiki[article] ?? wiki['index.md'] ?? '';
+  return (
+    <div className="flex flex-col gap-2">
+      {article !== 'index.md' ? (
+        <button className="self-start text-[13px] text-muted underline" onClick={() => setArticle('index.md')}>← Wiki index</button>
+      ) : null}
+      <article className="md-doc rounded-md border border-line bg-card px-5 py-4">
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={{
+            a: ({ href, children }) => {
+              const target = href ? decodeURIComponent(href.split('#')[0]) : '';
+              return target && wiki[target] !== undefined ? (
+                <a href="#" onClick={(e) => { e.preventDefault(); setArticle(target); }}>{children}</a>
+              ) : <span>{children}</span>;
+            },
+          }}
+        >
+          {text}
+        </ReactMarkdown>
+      </article>
+    </div>
+  );
+}
+
+function MapHubs({ base, q }: { base: string; q: string }) {
+  const data = useMapData<{ hubs: { id: string; label: string; degree: number; source_file: string | null }[] }>(`${base}/data/hubs?${q}`);
+  if (data === undefined) return <div className="text-[14px] text-muted">Loading…</div>;
+  const hubs = data?.hubs ?? [];
+  if (!hubs.length) return <div className="text-[14px] text-muted">No hubs recorded for this map.</div>;
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="m-0 max-w-[75ch] text-[13.5px] text-muted">
+        The most-connected code in the project. A plan that changes one of these is flagged, and the Reviewer checks its callers.
+      </p>
+      <div className="overflow-hidden rounded-md border border-line bg-card">
+        <table className="w-full text-[13.5px]">
+          <thead>
+            <tr className="border-b border-line bg-raised text-left text-[12.5px] text-muted">
+              <th className="px-3 py-2 font-medium">Code</th>
+              <th className="px-3 py-2 font-medium">File</th>
+              <th className="px-3 py-2 text-right font-medium">Connections</th>
+            </tr>
+          </thead>
+          <tbody>
+            {hubs.map((h) => (
+              <tr key={h.id} className="border-b border-line last:border-0">
+                <td className="mono px-3 py-2">{h.label}</td>
+                <td className="mono px-3 py-2 text-ink-2">{h.source_file}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{h.degree}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function MapLessons({ base, q }: { base: string; q: string }) {
+  const data = useMapData<{ lessons: string | null }>(`${base}/data/lessons?${q}`);
+  if (data === undefined) return <div className="text-[14px] text-muted">Loading…</div>;
+  if (!data?.lessons) {
+    return <div className="text-[14px] text-muted">No lessons yet. They build up as AgentSync finishes tasks on this project.</div>;
+  }
+  return (
+    <article className="md-doc rounded-md border border-line bg-card px-5 py-4">
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{data.lessons}</ReactMarkdown>
+    </article>
+  );
+}
+
+const ASK_TOOLS = [
+  { key: 'query', label: 'Search', help: 'The part of the code a question is about.', fields: [['question', 'e.g. how are ticket SLA emails sent']] },
+  { key: 'explain', label: 'Explain', help: 'One function, class or file and everything it connects to.', fields: [['name', 'e.g. sendSlaNotifications or lib/agentsync.ts']] },
+  { key: 'affected', label: 'What depends on it', help: 'Everything that would be affected by changing it.', fields: [['name', 'a function, class or file path']] },
+  { key: 'path', label: 'How they connect', help: 'The shortest chain of calls and imports between two things.', fields: [['from', 'from…'], ['to', 'to…']] },
+] as const;
+
+function MapAsk({ base, tenantSlug }: { base: string; tenantSlug: string | null }) {
+  const [tool, setTool] = useState<(typeof ASK_TOOLS)[number]['key']>('query');
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [answer, setAnswer] = useState<string | null>(null);
+  const [asking, setAsking] = useState(false);
+  const spec = ASK_TOOLS.find((t) => t.key === tool)!;
+
+  async function ask(e: React.FormEvent) {
+    e.preventDefault();
+    setAsking(true);
+    const res = await fetch(`${base}/ask`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ tenant_slug: tenantSlug, tool, ...values }),
+    });
+    const body = (await res.json().catch(() => ({}))) as { text?: string; detail?: string; error?: string };
+    setAnswer(body.text ?? body.detail ?? `Could not ask the map (${body.error ?? res.status}).`);
+    setAsking(false);
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap gap-1.5">
+        {ASK_TOOLS.map((t) => (
+          <button
+            key={t.key}
+            className={`rounded-md border px-2.5 py-1 text-[13px] ${tool === t.key ? 'border-ink text-ink' : 'border-line text-ink-2 hover:bg-raised'}`}
+            onClick={() => { setTool(t.key); setAnswer(null); }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <p className="m-0 text-[13px] text-muted">{spec.help}</p>
+      <form className="flex flex-wrap gap-2" onSubmit={(e) => void ask(e)}>
+        {spec.fields.map(([name, placeholder]) => (
+          <input
+            key={name}
+            className="field-input min-w-[220px] flex-1"
+            placeholder={placeholder}
+            value={values[name] ?? ''}
+            onChange={(e) => setValues({ ...values, [name]: e.target.value })}
+          />
+        ))}
+        <button className="btn min-h-[38px] px-4 text-[13.5px]" disabled={asking || spec.fields.some(([n]) => !(values[n] ?? '').trim())}>
+          {asking ? 'Asking…' : 'Ask'}
+        </button>
+      </form>
+      {answer !== null ? (
+        <pre className="mono m-0 max-h-[520px] overflow-auto rounded-md border border-line bg-card p-3 text-[12.5px] whitespace-pre-wrap">{answer}</pre>
+      ) : null}
     </div>
   );
 }

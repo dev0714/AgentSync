@@ -264,6 +264,27 @@ async function ensureOpenAIFile(ctx: AiContext, a: Attachment): Promise<string> 
   return uploaded.id;
 }
 
+/** A file for a sandbox that isn't an attachment (the code map): uploaded, expiring like the rest. */
+export async function uploadProviderCopy(
+  ctx: AiContext, provider: 'anthropic' | 'openai', content: Buffer, filename: string, mediaType: string,
+): Promise<string> {
+  if (provider === 'openai') {
+    const client = await openaiClientFor(ctx);
+    const uploaded = await client.files.create({
+      file: await toOpenAIFile(content, filename, { type: mediaType }),
+      purpose: 'user_data',
+      expires_after: { anchor: 'created_at', seconds: PROVIDER_COPY_SECONDS },
+    });
+    return uploaded.id;
+  }
+  const client = await clientFor(ctx);
+  const uploaded = await client.files.upload({
+    file: await toAnthropicFile(content, filename, { type: mediaType }),
+    expires_in_seconds: PROVIDER_COPY_SECONDS,
+  });
+  return uploaded.id;
+}
+
 /** Content blocks for a Claude message: PDFs and images by file id, the rest as text. */
 export async function claudeBlocks(ctx: AiContext, attachments: Attachment[]): Promise<unknown[]> {
   if (attachments.length === 0) return [];
