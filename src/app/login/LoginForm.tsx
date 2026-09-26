@@ -52,7 +52,7 @@ export default function LoginForm() {
       {/* Brand panel — hidden on small screens, where the form is the page. */}
       <aside className="hidden w-[44%] max-w-[640px] flex-col gap-10 bg-night px-16 py-12 text-canvas lg:flex">
         <Link href="/" aria-label="AgentSync home" className="self-start">
-          <Logo size={26} tone="paper" />
+          <Logo size={26} tone="paper" decorative />
         </Link>
         <div className="flex-1" />
         <p className="display m-0 text-[44px] leading-[1.04] font-bold tracking-[-0.035em] xl:text-[48px]">
@@ -81,7 +81,7 @@ export default function LoginForm() {
       <main className="flex flex-1 items-center justify-center px-6 py-12">
         <div className="fade-up flex w-full max-w-[400px] flex-col gap-6">
           <Link href="/" aria-label="AgentSync home" className="self-start lg:hidden">
-            <Logo size={24} />
+            <Logo size={24} decorative />
           </Link>
 
           <div className="flex flex-col gap-2">

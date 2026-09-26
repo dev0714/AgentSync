@@ -92,7 +92,7 @@ export default function Sidebar({
         href="/"
         className="flex flex-col gap-1 px-5 pt-5 pb-4 no-underline hover:no-underline"
       >
-        <Logo size={21} />
+        <Logo size={23} />
         <div className="label">Control plane</div>
       </Link>
 

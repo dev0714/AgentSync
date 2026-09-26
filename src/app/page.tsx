@@ -52,7 +52,7 @@ function SiteNav() {
     <nav className="sticky top-0 z-30 border-b border-line bg-canvas/90 backdrop-blur-md">
       <div className={`${wrap} flex h-[72px] items-center gap-8 md:h-[84px]`}>
         <Link href="/" aria-label="AgentSync home" className="no-underline">
-          <Logo size={24} />
+          <Logo size={28} decorative />
         </Link>
         <div className="hidden gap-7 text-[15px] lg:flex">
           {nav.map((n) => (

@@ -1,3 +1,5 @@
+import Image from 'next/image';
+
 /**
  * Line icons for the site and the control plane — one stroke weight, drawn on
  * a 24px grid, coloured by `currentColor` so they take the text colour of
@@ -75,27 +77,37 @@ export default function Icon({
 }
 
 /**
- * The AgentSync wordmark: "Agent" in ink, "Sync" in brand blue, as in the
- * logo. Stands in for the full lockup until the logo file is added under
- * public/brand/ — the mark itself is not redrawn here, because a hand-traced
- * copy of a brand mark is never quite the mark.
+ * The AgentSync lockup — mark plus wordmark — from `public/brand/`.
+ *
+ * `size` is roughly the wordmark's cap height in pixels, so it lines up with
+ * text set at that size. `tone="paper"` swaps the ink letters for paper on
+ * dark backgrounds; the blue stays blue either way. The image says
+ * "AgentSync", so pass `decorative` when a surrounding link already does.
  */
+const LOGO_RATIO = 1200 / 214;
+
 export function Logo({
   size = 24,
   tone = 'ink',
+  decorative = false,
 }: {
   size?: number;
   tone?: 'ink' | 'paper';
+  decorative?: boolean;
 }) {
+  const height = Math.round(size * 1.25);
+  const width = Math.round(height * LOGO_RATIO);
+  // Both dimensions are pinned so a flex parent can neither squash nor
+  // stretch it.
   return (
-    <span
-      className="display inline-flex items-baseline font-bold"
-      style={{ fontSize: size, lineHeight: 1, letterSpacing: '-0.035em' }}
-    >
-      <span style={{ color: tone === 'ink' ? 'var(--color-ink)' : 'var(--color-canvas)' }}>
-        Agent
-      </span>
-      <span style={{ color: 'var(--color-accent)' }}>Sync</span>
-    </span>
+    <Image
+      src={tone === 'paper' ? '/brand/agentsync-logo-paper.png' : '/brand/agentsync-logo.png'}
+      alt={decorative ? '' : 'AgentSync'}
+      width={width}
+      height={height}
+      priority
+      className="block shrink-0 self-start"
+      style={{ width, height, maxWidth: 'none' }}
+    />
   );
 }
