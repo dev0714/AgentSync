@@ -3,6 +3,14 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { Logo } from '@/components/site/Icon';
+
+/** The three gates a project can hold. The brand panel names them. */
+const GATES = [
+  { name: 'Plan approval', when: 'Before any code' },
+  { name: 'Merge approval', when: 'Before the default branch' },
+  { name: 'Production approval', when: 'Before customers see it' },
+];
 
 export default function LoginForm() {
   const router = useRouter();
@@ -40,43 +48,53 @@ export default function LoginForm() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-canvas px-6 py-12">
-      <div className="w-full max-w-[380px]">
-        <Link
-          href="/"
-          className="mb-8 flex items-center gap-3 no-underline hover:no-underline"
-        >
-          <div
-            className="mono flex size-[26px] items-center justify-center rounded-[7px] bg-accent font-semibold text-canvas"
-            style={{ fontSize: 13 }}
-          >
-            A
-          </div>
-          <div className="text-[15px] font-semibold tracking-[-0.01em] text-ink">
-            AgentSync
-          </div>
-          <div
-            className="mono rounded border border-line px-[7px] py-0.5 text-muted-2"
-            style={{ fontSize: 9.5, letterSpacing: '0.08em' }}
-          >
-            CONTROL PLANE
-          </div>
+    <div className="flex min-h-screen bg-canvas text-ink">
+      {/* Brand panel — hidden on small screens, where the form is the page. */}
+      <aside className="hidden w-[44%] max-w-[640px] flex-col gap-10 bg-night px-16 py-12 text-canvas lg:flex">
+        <Link href="/" aria-label="AgentSync home" className="self-start">
+          <Logo size={26} tone="paper" />
         </Link>
+        <div className="flex-1" />
+        <p className="display m-0 text-[44px] leading-[1.04] font-bold tracking-[-0.035em] xl:text-[48px]">
+          Nothing merges or deploys until a person you chose approves it.
+        </p>
+        <ul className="m-0 flex list-none flex-col gap-2.5 p-0">
+          {GATES.map((g, i) => (
+            <li
+              key={g.name}
+              className="fade-up flex items-center gap-3 rounded-[14px] border border-night-line bg-night-2 px-4 py-3.5"
+              style={{ '--d': `${200 + i * 120}ms` } as React.CSSProperties}
+            >
+              <span className="blink size-2.5 rounded-full bg-gate" />
+              <span className="flex-1 text-[15px]">{g.name}</span>
+              <span className="mono text-[12px] tracking-[0.04em] text-[#a7a49b] uppercase">
+                {g.when}
+              </span>
+            </li>
+          ))}
+        </ul>
+        <span className="mono text-[12px] tracking-[0.06em] text-[#a7a49b]">
+          MULTI-TENANT · HUMAN-GATED · AUDITED END TO END
+        </span>
+      </aside>
 
-        <div className="card p-6">
-          <h1 className="mb-1.5 text-[20px] font-semibold tracking-[-0.02em]">
-            Sign in
-          </h1>
-          <p className="mb-6 text-[13px] text-muted" style={{ lineHeight: 1.55 }}>
-            Access is scoped to the tenants you belong to. Every approval you
-            grant is recorded against this account.
-          </p>
+      <main className="flex flex-1 items-center justify-center px-6 py-12">
+        <div className="fade-up flex w-full max-w-[400px] flex-col gap-6">
+          <Link href="/" aria-label="AgentSync home" className="self-start lg:hidden">
+            <Logo size={24} />
+          </Link>
 
-          <form onSubmit={onSubmit} className="flex flex-col gap-4">
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="email" className="label">
-                EMAIL
-              </label>
+          <div className="flex flex-col gap-2">
+            <h1 className="display m-0 text-[36px] font-bold tracking-[-0.03em]">Sign in</h1>
+            <p className="m-0 text-[16px] leading-[1.5] text-ink-3">
+              to the AgentSync control plane. Every approval you give is recorded
+              against this account.
+            </p>
+          </div>
+
+          <form onSubmit={onSubmit} className="flex flex-col gap-5">
+            <label htmlFor="email" className="flex flex-col gap-2">
+              <span className="text-[14px] font-semibold">Work email</span>
               <input
                 id="email"
                 type="email"
@@ -85,15 +103,13 @@ export default function LoginForm() {
                 autoFocus
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="field-input"
-                style={{ fontSize: 13, padding: '9px 11px' }}
+                placeholder="you@company.com"
+                className="field-input min-h-[50px] text-[16px]"
               />
-            </div>
+            </label>
 
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="password" className="label">
-                PASSWORD
-              </label>
+            <label htmlFor="password" className="flex flex-col gap-2">
+              <span className="text-[14px] font-semibold">Password</span>
               <input
                 id="password"
                 type="password"
@@ -101,43 +117,33 @@ export default function LoginForm() {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="field-input"
-                style={{ fontSize: 13, padding: '9px 11px' }}
+                className="field-input min-h-[50px] text-[16px]"
               />
-            </div>
+            </label>
 
             {error ? (
               <div
                 role="alert"
-                className="rounded-md border px-3 py-2.5 text-[12.5px]"
-                style={{
-                  borderColor: '#452020',
-                  background: '#2A1512',
-                  color: '#F08A80',
-                  lineHeight: 1.5,
-                }}
+                className="rounded-xl border border-[#e7b8b2] bg-danger-tint px-3.5 py-3 text-[14px] leading-[1.5] text-danger-ink"
               >
                 {error}
               </div>
             ) : null}
 
-            <button
-              type="submit"
-              disabled={busy}
-              className="mt-1 w-full cursor-pointer rounded-lg bg-ink px-4 py-2.5 text-[13.5px] font-semibold text-canvas hover:bg-white disabled:cursor-default disabled:opacity-60"
-            >
+            <button type="submit" disabled={busy} className="btn-primary min-h-[52px] w-full text-[16px]">
               {busy ? 'Signing in…' : 'Sign in'}
             </button>
           </form>
-        </div>
 
-        <div
-          className="mono mt-5 text-center text-muted-3"
-          style={{ fontSize: 10, letterSpacing: '0.06em' }}
-        >
-          AGENTSYNC · A LEADSYNC PLATFORM
+          <p className="m-0 text-[13.5px] leading-[1.55] text-muted-2">
+            Five wrong passwords lock the account for fifteen minutes. Trouble
+            signing in? Ask your tenant admin.
+          </p>
+          <Link href="/" className="self-start text-[14px] text-ink-3 hover:text-accent">
+            ← Back to the website
+          </Link>
         </div>
-      </div>
+      </main>
     </div>
   );
 }

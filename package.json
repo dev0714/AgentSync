@@ -12,7 +12,6 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.112.2",
     "next": "^15.5.23",
-    "ogl": "^1.0.11",
     "react": "19.1.1",
     "react-dom": "19.1.1",
     "server-only": "^0.0.1"
