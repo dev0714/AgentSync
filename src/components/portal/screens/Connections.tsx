@@ -163,6 +163,11 @@ function githubSteps(): SetupStep[] {
               why="Read CI results rather than trusting the agent's own account of them."
             />
             <Setting
+              name="Actions"
+              value="Read-only"
+              why="Read a failing job's log so the Engineer can repair what actually broke."
+            />
+            <Setting
               name="Administration"
               value="No access"
               why="Would let a task change branch protection — the thing the merge gate depends on."
@@ -222,17 +227,16 @@ GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----
       ),
     },
     {
-      title: 'What this does, and what it does not',
+      title: 'What happens next',
       body: (
         <>
-          This screen will then show GitHub as connected, and the repository allowlist
-          becomes the outer bound on what any agent can reach. It does{' '}
-          <strong className="text-ink-3">not</strong> make tasks run yet: the{' '}
-          <span className="mono text-ink-3">analyse</span> stage still has no checkout
-          workspace and no token minting, so a submitted task goes{' '}
-          <span className="mono text-ink-3">queued → analysing → failed</span> with{' '}
-          <span className="mono text-ink-3">STAGE_NOT_CONFIGURED</span> on the record
-          rather than pretending to progress.
+          The repository allowlist becomes the outer bound on what any agent can reach.
+          The agents read the repository, commit to an{' '}
+          <span className="mono text-ink-3">agentsync/…</span> branch and open a pull
+          request through this App; merging happens only after a person approves it here.
+          Give the repository a GitHub Actions workflow that runs on{' '}
+          <span className="mono text-ink-3">pull_request</span> so every change is checked
+          before review — without one, tasks reach review with checks marked as not reported.
         </>
       ),
     },

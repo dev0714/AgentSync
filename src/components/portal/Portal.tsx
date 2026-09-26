@@ -188,13 +188,14 @@ export default function Portal({
             {screen === "project" ? (
               <Project
                 projects={data.projects}
+                tenantSlug={data.tenant?.slug ?? null}
                 selected={projectId}
                 onSelect={setProjectId}
                 group={projectGroup}
                 onGroup={setProjectGroup}
               />
             ) : null}
-            {screen === "sources" ? <Sources sources={data.sources} /> : null}
+            {screen === "sources" ? <Sources sources={data.sources} tenantSlug={data.tenant?.slug ?? null} /> : null}
             {screen === "usage" ? (
               <Usage usage={data.usage} projects={data.projects} />
             ) : null}

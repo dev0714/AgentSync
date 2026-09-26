@@ -1,5 +1,6 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import type { TaskDetail } from '@/lib/portal-data';
 import {
@@ -87,6 +88,7 @@ export default function Detail({
 }) {
   const [detail, setDetail] = useState<TaskDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -106,7 +108,7 @@ export default function Detail({
     return () => {
       cancelled = true;
     };
-  }, [taskId]);
+  }, [taskId, reload]);
 
   const back = (
     <button
@@ -188,22 +190,13 @@ export default function Detail({
       </div>
 
       {banner ? (
-        <div
-          role="status"
-          className="flex flex-col gap-3 rounded-[18px] border border-[#F0C9A8] bg-gate-tint px-5 py-4 sm:flex-row sm:items-center"
-        >
-          <span className="pulse-ring relative flex size-9 shrink-0 items-center justify-center rounded-full bg-gate text-white">
-            <span className="size-2.5 rounded-full bg-white" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="text-[15.5px] font-semibold text-gate-ink">
-              {banner.title}
-            </div>
-            <div className="text-[14px] text-ink-3" style={{ lineHeight: 1.55 }}>
-              {banner.body}
-            </div>
-          </div>
-        </div>
+        <GateBanner
+          taskId={task.id}
+          status={task.status}
+          title={banner.title}
+          body={banner.body}
+          onDecided={() => setReload((n) => n + 1)}
+        />
       ) : null}
 
       <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[1fr_328px]">
@@ -650,6 +643,116 @@ export default function Detail({
           ) : null}
         </div>
       </div>
+    </div>
+  );
+}
+
+const GATE_FOR: Record<string, 'plan' | 'merge'> = {
+  awaiting_plan_approval: 'plan',
+  awaiting_merge_approval: 'merge',
+};
+
+const DECISION_ERROR: Record<string, string> = {
+  NOT_AUTHORISED: 'Your role cannot approve for this tenant. Ask a tenant admin or approver.',
+  NOT_AT_GATE: 'This task has already moved on — refresh to see where it is.',
+  COMMENT_REQUIRED: 'Say what should change before requesting changes.',
+};
+
+/**
+ * The orange block a person acts on. Approve, ask for changes (with a note the
+ * agent will read) or reject. The server re-checks the role and the gate, so
+ * these buttons are a convenience, not the control.
+ */
+function GateBanner({
+  taskId,
+  status,
+  title,
+  body,
+  onDecided,
+}: {
+  taskId: string;
+  status: string;
+  title: string;
+  body: string;
+  onDecided: () => void;
+}) {
+  const router = useRouter();
+  const gate = GATE_FOR[status];
+  const [comment, setComment] = useState('');
+  const [asking, setAsking] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  async function decide(decision: 'approved' | 'changes_requested' | 'rejected') {
+    if (decision === 'changes_requested' && !comment.trim()) {
+      setAsking(true);
+      setProblem(DECISION_ERROR.COMMENT_REQUIRED);
+      return;
+    }
+    if (decision === 'rejected' && !window.confirm('Reject and cancel this task?')) return;
+    setBusy(decision);
+    setProblem(null);
+    try {
+      const res = await fetch(`/api/portal/tasks/${taskId}/decision`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ gate, decision, comment: comment.trim() || undefined }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setProblem(DECISION_ERROR[data.error ?? ''] ?? `Could not record the decision (${data.error ?? res.status}).`);
+        return;
+      }
+      setComment('');
+      setAsking(false);
+      onDecided();
+      router.refresh();
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div
+      role="status"
+      className="flex flex-col gap-4 rounded-[18px] border border-[#F0C9A8] bg-gate-tint px-5 py-4"
+    >
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <span className="pulse-ring relative flex size-9 shrink-0 items-center justify-center rounded-full bg-gate text-white">
+          <span className="size-2.5 rounded-full bg-white" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="text-[15.5px] font-semibold text-gate-ink">{title}</div>
+          <div className="text-[14px] text-ink-3" style={{ lineHeight: 1.55 }}>
+            {body}
+          </div>
+        </div>
+        {gate ? (
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <button className="btn-gate" disabled={!!busy} onClick={() => decide('approved')}>
+              {busy === 'approved' ? 'Approving…' : gate === 'plan' ? 'Approve plan' : 'Approve & merge'}
+            </button>
+            <button className="btn" disabled={!!busy} onClick={() => (asking ? decide('changes_requested') : setAsking(true))}>
+              {busy === 'changes_requested' ? 'Sending…' : asking ? 'Send changes' : 'Request changes'}
+            </button>
+            <button className="btn btn-danger" disabled={!!busy} onClick={() => decide('rejected')}>
+              Reject
+            </button>
+          </div>
+        ) : null}
+      </div>
+      {asking ? (
+        <label className="flex flex-col gap-1.5">
+          <span className="text-[13px] font-medium text-ink-2">What should change?</span>
+          <textarea
+            className="field-input min-h-[88px] py-2"
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder="The agent reads this before it tries again."
+          />
+        </label>
+      ) : null}
+      {problem ? <div className="text-[13.5px] text-danger-ink">{problem}</div> : null}
     </div>
   );
 }

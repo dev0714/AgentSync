@@ -14,7 +14,21 @@ import {
   swatch,
   type Row,
 } from '@/lib/portal-ui';
-import { Ago, Bar, ColLabel, Empty, FieldRows, Pill, TableCard, Tabs } from '../ui';
+import { useState } from 'react';
+import { Ago, Bar, ColLabel, FieldRows, Pill, TableCard, Tabs } from '../ui';
+import { IssueKeyForm, NewProjectForm } from './SetupForms';
+
+function SetupCard({ title, detail, children }: { title: string; detail: string; children: React.ReactNode }) {
+  return (
+    <div className="card flex flex-col gap-4 p-6">
+      <div>
+        <div className="text-[16px] font-semibold text-ink">{title}</div>
+        <div className="mt-1 max-w-[70ch] text-[14px] text-muted" style={{ lineHeight: 1.6 }}>{detail}</div>
+      </div>
+      {children}
+    </div>
+  );
+}
 
 /* ---- projects -------------------------------------------------------- */
 
@@ -67,20 +81,28 @@ export function Project_({
   onSelect,
   group,
   onGroup,
+  tenantSlug,
 }: {
+  tenantSlug: string | null;
   projects: ProjectRecord[];
   selected: string | null;
   onSelect: (id: string) => void;
   group: number;
   onGroup: (i: number) => void;
 }) {
-  if (projects.length === 0) {
+  const [adding, setAdding] = useState(false);
+
+  if (projects.length === 0 || adding) {
     return (
-      <Empty
-        title="No projects yet"
-        detail="A project ties a repository to its approval policy, runtime commands and AI routing. Every submitted task names one, so nothing can be submitted until at least one exists."
-        table="agentsync.projects · project_repositories · project_runtime_configs · project_ai_configs"
-      />
+      <SetupCard
+        title={projects.length === 0 ? 'Create your first project' : 'New project'}
+        detail="A project points the agents at one GitHub repository and sets its approval gates. Every submitted task names a project."
+      >
+        <NewProjectForm tenantSlug={tenantSlug} />
+        {adding ? (
+          <button className="btn w-fit" onClick={() => setAdding(false)}>Back to projects</button>
+        ) : null}
+      </SetupCard>
     );
   }
 
@@ -112,6 +134,7 @@ export function Project_({
             {project.name}
           </div>
         )}
+        <button className="btn ml-auto" onClick={() => setAdding(true)}>New project</button>
         <Pill c={project.enabled ? ['#DDEFE3', '#17603C'] : ['#F0ECE3', '#5B5D66']}>
           {project.enabled ? 'ACTIVE' : 'DISABLED'}
         </Pill>
@@ -155,19 +178,20 @@ export { Project_ as Project };
 const SRC_GRID =
   'grid min-w-[900px] grid-cols-[minmax(200px,1fr)_160px_150px_100px_90px_90px] items-center gap-3';
 
-export function Sources({ sources }: { sources: SourceRow[] }) {
-  if (sources.length === 0) {
-    return (
-      <Empty
-        title="No source system has a key"
-        detail="A source system is anything permitted to submit tasks — a service desk, an intake portal, a cron job. Issue a key with select public.agentsync_issue_source_key('<tenant-slug>', '<name>'); the plaintext key is returned once and only its bcrypt hash is stored."
-        table="agentsync.source_systems"
-      />
-    );
-  }
+export function Sources({ sources, tenantSlug }: { sources: SourceRow[]; tenantSlug: string | null }) {
+  const issue = (
+    <SetupCard
+      title={sources.length === 0 ? 'Issue your first key' : 'Issue another key'}
+      detail="A source system is anything allowed to submit tasks — a service desk, an intake form, a cron job. The key is shown once; only its hash is stored."
+    >
+      <IssueKeyForm tenantSlug={tenantSlug} />
+    </SetupCard>
+  );
+  if (sources.length === 0) return issue;
 
   return (
     <div className="flex flex-col gap-3">
+      {issue}
       <div className="text-[14px] text-muted" style={{ lineHeight: 1.6 }}>
         Systems permitted to submit tasks. Keys are stored hashed; signing
         secrets live in the secret manager and are referenced by identifier
