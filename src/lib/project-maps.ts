@@ -78,13 +78,26 @@ const SCRIPT = `
 set -u
 mkdir -p ${OUT}
 cd /vercel/sandbox
+PY="$(command -v python3)"
 {
-  python3 -m venv /tmp/graphify-venv &&
-  /tmp/graphify-venv/bin/pip install --quiet --disable-pip-version-check "graphifyy[sql]==${GRAPHIFY_VERSION}" &&
+  # A virtual environment where the image supports one; otherwise the image's
+  # pip (fetched first if missing) installs Graphify into a folder of its own.
+  if "$PY" -m venv /tmp/graphify-venv >/dev/null 2>&1 && [ -x /tmp/graphify-venv/bin/python ]; then
+    RUNPY=/tmp/graphify-venv/bin/python
+    "$RUNPY" -m pip install --quiet --disable-pip-version-check "graphifyy[sql]==${GRAPHIFY_VERSION}"
+  else
+    rm -rf /tmp/graphify-venv
+    if ! "$PY" -m pip --version >/dev/null 2>&1; then
+      curl -sSfL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py &&
+      PIP_BREAK_SYSTEM_PACKAGES=1 "$PY" /tmp/get-pip.py --quiet --user
+    fi &&
+    PIP_BREAK_SYSTEM_PACKAGES=1 "$PY" -m pip install --quiet --disable-pip-version-check --target /tmp/graphify-lib "graphifyy[sql]==${GRAPHIFY_VERSION}" &&
+    RUNPY="$PY"
+  fi &&
   if [ -f ${OUT}/cache.in.tgz ]; then tar -xzf ${OUT}/cache.in.tgz; fi &&
   UPDATE="" && if [ -f graphify-out/manifest.json ] && [ -f graphify-out/graph.json ]; then UPDATE="--update"; fi &&
-  env -i HOME=/tmp PATH=/usr/local/bin:/usr/bin:/bin /tmp/graphify-venv/bin/graphify extract . --code-only $UPDATE &&
-  env -i HOME=/tmp PATH=/usr/local/bin:/usr/bin:/bin /tmp/graphify-venv/bin/graphify cluster-only .
+  env -i HOME=/tmp PATH=/usr/local/bin:/usr/bin:/bin PYTHONPATH=/tmp/graphify-lib "$RUNPY" -m graphify extract . --code-only $UPDATE &&
+  env -i HOME=/tmp PATH=/usr/local/bin:/usr/bin:/bin PYTHONPATH=/tmp/graphify-lib "$RUNPY" -m graphify cluster-only .
 } > ${OUT}/log.txt 2>&1
 code=$?
 git rev-parse HEAD > ${OUT}/commit.txt 2>/dev/null
@@ -231,6 +244,17 @@ async function poll(row: MapRow): Promise<void> {
     await setMap(row.project_id, { status: 'failed', error: `Could not collect the map: ${(e as Error).message}`.slice(0, 1000), finished_at: new Date().toISOString() });
   }
   await sandbox.stop().catch(() => undefined);
+}
+
+/**
+ * Checks one project's running map now (the Map tab calls this while it
+ * waits), so a finished run is collected without waiting for the worker.
+ */
+export async function pollProjectMap(projectId: string): Promise<void> {
+  if (!mapsAvailable()) return;
+  const { data } = await db().rpc('agentsync_map_get', { p_project_id: projectId });
+  const row = data as MapRow | null;
+  if (row?.status === 'running') await poll(row);
 }
 
 /** One pass for the worker: collect finished runs, start queued ones. */

@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { currentUser } from '@/lib/auth';
 import { kickWorker } from '@/lib/kick';
-import { MAP_BUCKET, mapsAvailable, queueMap } from '@/lib/project-maps';
+import { MAP_BUCKET, mapsAvailable, pollProjectMap, queueMap } from '@/lib/project-maps';
 import { serviceClient } from '@/lib/supabase';
 
 // Starting a map runs in the background after the response.
@@ -16,6 +16,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const user = await currentUser();
   if (!user) return NextResponse.json({ error: 'UNAUTHENTICATED' }, { status: 401 });
   const { id } = await params;
+  const tenant = request.nextUrl.searchParams.get('tenant') ?? '';
+  const { data: allowed } = await serviceClient().rpc('agentsync_portal_project_access', {
+    p_user_id: user.id, p_tenant_slug: tenant, p_project_id: id,
+  });
+  // Someone is watching: collect the run now if it has finished.
+  if (allowed === true) await pollProjectMap(id).catch((e) => console.error('map poll failed', e));
+
   const { data, error } = await serviceClient().rpc('agentsync_portal_project_map', {
     p_user_id: user.id,
     p_tenant_slug: request.nextUrl.searchParams.get('tenant') ?? '',
