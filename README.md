@@ -234,6 +234,32 @@ source's callback secret (Source systems → Map clients → **Generate callback
 secret**, shown once and stored encrypted), or the project's secret when the
 source has none. A 5xx is retried once; a callback never fails the task.
 
+### One-click connection for source systems
+
+A multi-tenant source such as LeadSync connects each of its tenants without
+anyone copying keys. The source sends its admin to:
+
+```
+/connect?app=LeadSync&account=<its tenant>&return_url=<https callback>&state=…&challenge=<base64url SHA-256 of a verifier>
+```
+
+The admin signs in (login honours a same-site `next`), picks one of the AgentSync
+tenants they administer and approves. AgentSync finds or creates the source
+`LeadSync · <account>` — reconnecting rotates its key and keeps its client
+mappings — generates its callback secret, seals the key behind a one-time code
+(10 minutes, single use) and sends the browser back to `return_url?code=…&state=…`.
+The source's server then trades the code for its credentials:
+
+```http
+POST /api/v1/connect/exchange
+{ "code": "…", "verifier": "…" }
+→ { "api_key": "ask_live_…", "callback_secret": "whsec_…", "source_id": "…", "tenant_name": "…" }
+```
+
+The code only works with the verifier whose hash was sent as `challenge`, so a
+code seen in a browser or a log is useless. `POST /api/v1/connect/revoke` with the
+source's bearer key disables it (Disconnect).
+
 Keys are issued once and stored hashed:
 
 ```sql

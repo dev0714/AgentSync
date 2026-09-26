@@ -38,8 +38,12 @@ export default function LoginForm() {
         return;
       }
 
+      // Back to where sign-in was asked for (e.g. a one-click connection),
+      // but only ever to a path on this site.
+      const next = new URLSearchParams(window.location.search).get('next');
+      const target = next && next.startsWith('/') && !next.startsWith('//') && !next.startsWith('/\\') ? next : '/portal';
       // Full navigation so the server re-reads the session cookie.
-      router.replace('/portal');
+      router.replace(target);
       router.refresh();
     } catch {
       setError('Could not reach the server.');
