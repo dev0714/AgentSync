@@ -36,6 +36,7 @@ import {
 } from './attachments';
 import { recall, remember, renderMemoryBlock } from './memory';
 import { DOC_PATH, recordAgentDoc } from './project-docs';
+import { mapContext, queueMap } from './project-maps';
 import { optionalSecret } from './secrets';
 import { serviceClient } from './supabase';
 
@@ -290,6 +291,11 @@ async function analyse(job: Job): Promise<Outcome> {
     const text = await readFile(client, r, path, r.defaultBranch);
     if (text !== null) files[path] = text.slice(0, 15_000);
   }
+
+  // The project's code map (Graphify): its report and the connections around
+  // the files this request looks likely to touch.
+  const map = await mapContext(job.task.project_id, scored).catch(() => null);
+  if (map) files['(AgentSync code map — reference only, not a repository file)'] = map.slice(0, 15_000);
 
   await update(job, { stage_state: { context: { paths: paths.slice(0, 3000), total_paths: paths.length, files } } });
   await logEvent(job.task.id, 'agent.analysed',
@@ -997,6 +1003,9 @@ async function ship(job: Job): Promise<Outcome> {
     await recordAgentDoc(job.task.project_id, `${description}\n`, job.task.id, mergeSha, job.task.title)
       .catch((e) => console.error('could not record the description version', e));
   }
+
+  // The code changed: map it again (only the changed files are re-parsed).
+  await queueMap(job.task.project_id, 'merge', job.task.id).catch((e) => console.error('could not queue the map', e));
 
   const summary = `Merged #${job.task.pull_request_number} into ${r.defaultBranch}${version ? ` as v${version}` : ''}. ${job.plan?.summary ?? ''}`.trim();
   await update(job, { commit_sha: mergeSha, result_summary: summary });

@@ -9,6 +9,7 @@ import {
   type Installation,
   type Repo,
 } from './github';
+import { queueMap } from './project-maps';
 import { serviceClient } from './supabase';
 
 /**
@@ -174,6 +175,9 @@ export async function importProjectDoc(projectId: string): Promise<{ result: Imp
   const r = repoOf(ctx);
   if (!r || !ctx.github) return { result: 'no_repository' };
   if (ctx.document?.repo_state === 'pr_open') return { result: 'pr_open' };
+
+  // A first code map comes with the first description.
+  await queueMap(projectId, 'import').catch(() => undefined);
 
   try {
     const gh = await githubFor(ctx.github, r);

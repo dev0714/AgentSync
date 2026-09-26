@@ -64,7 +64,7 @@ const REPO_STATE: Record<string, { label: string; colour: string }> = {
   unknown: { label: 'Not checked yet', colour: '#5f616a' },
 };
 
-type Tab = 'description' | 'history' | 'releases';
+type Tab = 'description' | 'history' | 'releases' | 'map';
 
 export default function ProjectDocs({ projectId, tenantSlug, onOpenTask }: {
   projectId: string;
@@ -167,6 +167,7 @@ export default function ProjectDocs({ projectId, tenantSlug, onOpenTask }: {
             { k: 'description', label: 'Description' },
             { k: 'history', label: `History${data?.versions.length ? ` · ${data.versions.length}` : ''}` },
             { k: 'releases', label: `Releases${data?.release_version ? ` · v${data.release_version}` : ''}` },
+            { k: 'map', label: 'Map' },
           ]}
           active={tab}
           onSelect={(k) => { setTab(k); setViewing(null); }}
@@ -177,7 +178,9 @@ export default function ProjectDocs({ projectId, tenantSlug, onOpenTask }: {
         {problem ? <div className="text-[13.5px] text-danger-ink">{problem}</div> : null}
         {notice ? <div className="rounded-md border border-line bg-raised px-3 py-2 text-[13.5px] text-ink-2">{notice}</div> : null}
 
-        {!data ? (
+        {tab === 'map' ? (
+          <ProjectMap projectId={projectId} tenantSlug={tenantSlug} />
+        ) : !data ? (
           <div className="text-[14px] text-muted">Loading…</div>
         ) : tab === 'description' ? (
           !current ? (
@@ -384,6 +387,138 @@ function VersionView({ viewing, meta, isCurrent, busy, onBack, onRestore }: {
         <article className="md-doc rounded-md border border-line bg-card px-5 py-4">
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{viewing.content.replace(/^<!--[\s\S]*?-->\s*/, '')}</ReactMarkdown>
         </article>
+      )}
+    </div>
+  );
+}
+
+/* ---- the code map (Graphify) ---------------------------------------------- */
+
+type MapRow = {
+  status: 'queued' | 'running' | 'ready' | 'failed';
+  reason: string | null;
+  commit_sha: string | null;
+  mapped_at: string | null;
+  started_at: string | null;
+  graphify_version: string | null;
+  stats: { nodes?: number; edges?: number; communities?: number; files?: number } | null;
+  files: Record<string, number> | null;
+  error: string | null;
+};
+
+function ProjectMap({ projectId, tenantSlug }: { projectId: string; tenantSlug: string | null }) {
+  const [map, setMap] = useState<MapRow | null>(null);
+  const [report, setReport] = useState<string | null>(null);
+  const [available, setAvailable] = useState(true);
+  const [loaded, setLoaded] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [view, setView] = useState<'report' | 'graph'>('report');
+  const q = `tenant=${encodeURIComponent(tenantSlug ?? '')}`;
+
+  const load = useCallback(async () => {
+    const res = await fetch(`/api/portal/projects/${projectId}/map?${q}`, { cache: 'no-store' });
+    const body = (await res.json().catch(() => ({}))) as { map?: MapRow | null; report?: string | null; available?: boolean };
+    setMap(body.map ?? null);
+    setReport(body.report ?? null);
+    setAvailable(body.available !== false);
+    setLoaded(true);
+  }, [projectId, q]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  // While a run is going, check back every 20 seconds.
+  useEffect(() => {
+    if (map?.status !== 'queued' && map?.status !== 'running') return;
+    const t = setInterval(() => void load(), 20_000);
+    return () => clearInterval(t);
+  }, [map?.status, load]);
+
+  async function run(all: boolean) {
+    setBusy(all ? 'all' : 'one');
+    setNotice(null);
+    const res = await fetch(all ? '/api/portal/projects/maps/run-all' : `/api/portal/projects/${projectId}/map`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ tenant_slug: tenantSlug }),
+    });
+    const body = (await res.json().catch(() => ({}))) as { queued?: number; error?: string };
+    setBusy(null);
+    if (!res.ok) {
+      setNotice(body.error === 'NOT_AUTHORISED' ? 'Only a tenant admin can do this.' : `Could not start (${body.error ?? res.status}).`);
+      return;
+    }
+    setNotice(all ? `${body.queued} projects queued. Two are mapped at a time, a few minutes each.` : 'Mapping has started. This takes a few minutes.');
+    await load();
+  }
+
+  if (!loaded) return <div className="text-[14px] text-muted">Loading…</div>;
+
+  const going = map?.status === 'queued' || map?.status === 'running';
+  const hasMap = Boolean(map?.files?.['GRAPH_REPORT.md'] || map?.files?.['graph.json']);
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        {hasMap ? (
+          <span className="text-[13px] text-ink-2">
+            Mapped <Ago iso={map!.mapped_at} />
+            {map!.commit_sha ? <> from <span className="mono">{map!.commit_sha.slice(0, 7)}</span></> : null}
+            {map!.stats?.nodes ? ` · ${map!.stats.nodes.toLocaleString()} items, ${(map!.stats.edges ?? 0).toLocaleString()} connections${map!.stats.communities ? `, ${map!.stats.communities} subsystems` : ''}` : ''}
+          </span>
+        ) : (
+          <span className="text-[13px] text-ink-2">No map yet.</span>
+        )}
+        {going ? <Pill c={['#fbe7da', '#963510']}>{map!.status === 'queued' ? 'Waiting to map' : 'Mapping…'}</Pill> : null}
+        {map?.status === 'failed' ? <Pill c={['#fbe3e1', '#b42318']}>Last run failed</Pill> : null}
+        <div className="ml-auto flex gap-2">
+          {hasMap ? (
+            <button className="btn min-h-[38px] px-3 text-[13.5px]" onClick={() => setView(view === 'report' ? 'graph' : 'report')}>
+              {view === 'report' ? 'Interactive map' : 'Report'}
+            </button>
+          ) : null}
+          <button className="btn min-h-[38px] px-3 text-[13.5px]" disabled={Boolean(busy) || going || !available} onClick={() => void run(false)}>
+            {busy === 'one' ? 'Starting…' : hasMap ? 'Map again' : 'Map this project'}
+          </button>
+          <button className="btn min-h-[38px] px-3 text-[13.5px]" disabled={Boolean(busy) || !available} onClick={() => void run(true)}>
+            {busy === 'all' ? 'Queuing…' : 'Map every project'}
+          </button>
+        </div>
+      </div>
+
+      {!available ? (
+        <div className="rounded-md border border-line bg-raised px-3 py-2 text-[13.5px] text-ink-2">
+          Maps run in a Vercel Sandbox, which is only reachable from the deployed AgentSync (or with VERCEL_ACCESS_TOKEN, VERCEL_TEAM_ID and VERCEL_PROJECT_ID set).
+        </div>
+      ) : null}
+      {notice ? <div className="rounded-md border border-line bg-raised px-3 py-2 text-[13.5px] text-ink-2">{notice}</div> : null}
+      {map?.status === 'failed' && map.error ? (
+        <pre className="mono m-0 max-h-[180px] overflow-auto rounded-md border border-[#e7b8b2] bg-danger-tint p-3 text-[12px] whitespace-pre-wrap text-danger-ink">{map.error}</pre>
+      ) : null}
+
+      {!hasMap ? (
+        <p className="m-0 max-w-[75ch] text-[14px] text-muted" style={{ lineHeight: 1.6 }}>
+          A map shows how this project&apos;s code fits together: its main pieces, the subsystems they form and how they connect.
+          AgentSync makes it with Graphify, which parses the code in a private sandbox, with no AI model and no cost per run.
+          It is remade after every change AgentSync merges, and the agents read it before planning.
+        </p>
+      ) : view === 'graph' && map?.files?.['graph.html'] ? (
+        <iframe
+          title="Interactive code map"
+          src={`/api/portal/projects/${projectId}/map/graph?${q}`}
+          sandbox="allow-scripts allow-popups"
+          className="h-[640px] w-full rounded-md border border-line bg-card"
+        />
+      ) : view === 'graph' ? (
+        <div className="text-[14px] text-muted">This map has no interactive view (it was too large to keep).</div>
+      ) : report ? (
+        <article className="md-doc rounded-md border border-line bg-card px-5 py-4">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{report}</ReactMarkdown>
+        </article>
+      ) : (
+        <div className="text-[14px] text-muted">The map has no report.</div>
       )}
     </div>
   );

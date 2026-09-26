@@ -404,6 +404,39 @@ commits the `CHANGELOG.md` entry to the PR. The merge releases it, tags the merg
 commit `vX.Y.Z` and updates the project's version; a failed or rejected task frees
 its reserved version.
 
+## Code maps (Graphify)
+
+Every project gets a map of its code made with
+[Graphify](https://github.com/Graphify-Labs/graphify) (`graphifyy[sql]==0.9.69`,
+pinned): which files, functions and services connect to which, and the
+subsystems they form. It is made **code-only** — tree-sitter parsing, no AI model,
+nothing sent anywhere — in a Vercel Sandbox that clones the repository with a
+short-lived GitHub App token:
+
+```
+graphify extract . --code-only [--update]   # graph.json
+graphify cluster-only .                      # GRAPH_REPORT.md, graph.html
+```
+
+With no AI key and no `claude` CLI in the sandbox (and `env -i` around both
+commands), subsystems are named after their most-connected item and the report
+shows a token cost of 0. The outputs and Graphify's cache (so the next run
+re-parses only what changed) go to the private `project-maps` bucket;
+`agentsync.project_maps` tracks each run (queued → running → ready | failed).
+
+- **When**: on import, after every merge, and on request (Projects → Map → *Map
+  again* / *Map every project*). The worker's tick starts queued runs, two at a
+  time (`AGENTSYNC_MAP_CONCURRENCY`), and collects finished ones; a run is stopped
+  after 30 minutes.
+- **Portal**: the Map tab shows the report and the interactive graph. The graph
+  is served under a sandbox CSP (an opaque origin with no access to the portal),
+  with vis-network 9.1.6 inlined from `public/vendor/`, checked against the same
+  sha384 integrity hash Graphify's page declares.
+- **Agents**: the Analyst adds the report and the connections around the files a
+  request touches to the context the Planner reads.
+- **Credentials**: automatic on Vercel (OIDC); elsewhere set `VERCEL_ACCESS_TOKEN`,
+  `VERCEL_TEAM_ID` and `VERCEL_PROJECT_ID`.
+
 ## Agent memory
 
 So an agent knows what happened to a file before it edits it again. Two

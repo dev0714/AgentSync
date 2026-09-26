@@ -7,6 +7,7 @@ import {
   transitionTask,
 } from './tasks';
 import { cleanupProviderFiles } from './attachments';
+import { tickMaps } from './project-maps';
 import { STAGES, StageFailed, aiContext, callbackEventFor, loadJob, logEvent, sendCallback } from './stages';
 
 /**
@@ -119,6 +120,9 @@ export async function tick(workerId: string): Promise<TickResult> {
     // decision or tick can pick it up. (Terminal statuses already cleared it.)
     if (status) await release(taskId, workerId);
   }
+
+  // Code maps (Graphify in a sandbox): collect finished runs, start queued ones.
+  await tickMaps().catch((e) => console.error('map tick failed', e));
 
   return result;
 }
