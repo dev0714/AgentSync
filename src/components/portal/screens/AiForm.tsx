@@ -20,6 +20,7 @@ import {
 const MESSAGES: Record<string, string> = {
   UNSUPPORTED_PROVIDER: 'Only Anthropic and OpenAI are supported.',
   MODEL_REQUIRED: 'Name the model this credential is for.',
+  ENCRYPTION_NOT_CONFIGURED: 'Set AGENTSYNC_ENCRYPTION_KEY in Vercel first, or enter env:ANTHROPIC_API_KEY instead of the key.',
   CAP_MUST_BE_POSITIVE: 'A monthly cap must be greater than zero.',
   NO_CAP_TO_ENFORCE:
     'Either set a monthly cap, or leave the hard stop on. A cap that stops nothing would read as a limit without being one.',
@@ -61,8 +62,10 @@ function ProviderForm({
   );
 
   const [model, setModel] = useState(String(existing?.model ?? ''));
+  // A stored key is never shown back; blank keeps it.
+  const storedRef = existing?.key_reference ? String(existing.key_reference) : null;
   const [keyRef, setKeyRef] = useState(
-    String(existing?.key_reference ?? provider.envHint),
+    storedRef && !storedRef.startsWith('db:') ? storedRef : '',
   );
   const [triggers, setTriggers] = useState(
     String(existing?.failover_triggers ?? ''),
@@ -84,7 +87,7 @@ function ProviderForm({
       tenant_slug: tenantSlug,
       provider: provider.value,
       model,
-      key_reference: keyRef,
+      key_reference: keyRef.trim() || storedRef || '',
       failover_triggers: triggers,
       failover_requires_optin: optin,
       monthly_cap: cap === '' ? null : Number(cap),
@@ -110,25 +113,34 @@ function ProviderForm({
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <Field label="model" hint={`For example ${provider.modelHint}.`}>
+        <Field
+          label="API key"
+          hint={
+            storedRef?.startsWith('db:')
+              ? 'A key is stored, encrypted. Paste a new one to replace it, or leave blank to keep it.'
+              : `Paste the key — it is stored encrypted and never shown again. Or enter ${provider.envHint} to use a Vercel variable.`
+          }
+        >
           <input
-            className="field-input"
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-            placeholder={provider.modelHint}
-            required
+            className="field-input mono"
+            type="password"
+            autoComplete="off"
+            value={keyRef}
+            onChange={(e) => setKeyRef(e.target.value)}
+            placeholder={storedRef?.startsWith('db:') ? '•••••••• stored' : `sk-… or ${provider.envHint}`}
+            required={!storedRef}
           />
         </Field>
 
         <Field
-          label="key_reference"
-          hint={`The environment variable holding the key, with a scheme. The key itself is refused.`}
+          label="model (optional)"
+          hint="Leave blank — each agent uses its own model from Agents → Models by tier. Only used for an agent without a tier model."
         >
           <input
             className="field-input"
-            value={keyRef}
-            onChange={(e) => setKeyRef(e.target.value)}
-            required
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            placeholder="use the agents' tier models"
           />
         </Field>
 

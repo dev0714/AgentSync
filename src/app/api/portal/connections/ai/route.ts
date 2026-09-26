@@ -1,6 +1,11 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { currentUser } from '@/lib/auth';
 import { deleteAiCredential, upsertAiCredential } from '@/lib/connections';
+import { encryptionConfigured, seal } from '@/lib/crypto';
+import { serviceClient } from '@/lib/supabase';
+
+/** A stored reference (env:NAME, db:<id>) as opposed to a pasted key. */
+const REFERENCE = /^[a-z][a-z0-9+.-]*:\S+$/;
 
 /** POST|DELETE /api/portal/connections/ai — one credential per provider. */
 
@@ -19,11 +24,41 @@ export async function POST(request: NextRequest) {
 
   const b = body as Record<string, unknown>;
   const cap = b.monthly_cap;
+  const tenantSlug = String(b.tenant_slug ?? '');
+  let keyReference = String(b.key_reference ?? '').trim();
+
+  // A pasted key is never stored as given: it is encrypted with the
+  // deployment's key and the credential holds only a db:<id> reference.
+  if (keyReference && !REFERENCE.test(keyReference)) {
+    if (!encryptionConfigured()) {
+      return NextResponse.json(
+        { error: 'ENCRYPTION_NOT_CONFIGURED', detail: 'Set AGENTSYNC_ENCRYPTION_KEY in Vercel, or enter env:ANTHROPIC_API_KEY instead.' },
+        { status: 503 },
+      );
+    }
+    const sealed = seal(keyReference);
+    const { data, error } = await serviceClient().rpc('agentsync_store_secret', {
+      p_user_id: user.id,
+      p_tenant_slug: tenantSlug,
+      p_purpose: `ai_key:${String(b.provider ?? '')}`,
+      p_ciphertext: sealed.ciphertext,
+      p_iv: sealed.iv,
+      p_tag: sealed.tag,
+    });
+    const stored = data as { ok: boolean; reference?: string; error?: string } | null;
+    if (error || !stored?.ok || !stored.reference) {
+      return NextResponse.json(
+        { error: stored?.error ?? 'INTERNAL_ERROR' },
+        { status: stored?.error === 'NOT_AUTHORISED' ? 403 : 500 },
+      );
+    }
+    keyReference = stored.reference;
+  }
   const result = await upsertAiCredential(user.id, {
-    tenantSlug: String(b.tenant_slug ?? ''),
+    tenantSlug,
     provider: String(b.provider ?? ''),
     model: String(b.model ?? ''),
-    keyReference: String(b.key_reference ?? ''),
+    keyReference,
     failoverTriggers: String(b.failover_triggers ?? ''),
     failoverRequiresOptin: b.failover_requires_optin !== false,
     monthlyCap: cap === null || cap === undefined || cap === '' ? null : Number(cap),
