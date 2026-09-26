@@ -95,12 +95,12 @@ function ProviderForm({
   return (
     <form onSubmit={save} className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2.5">
-        <div className="text-[13px] font-semibold">{provider.label}</div>
-        <Pill c={existing ? ['#122E1E', '#6FD69C'] : ['#212125', '#9A9AA3']}>
+        <div className="text-[14.5px] font-semibold">{provider.label}</div>
+        <Pill c={existing ? ['#DDEFE3', '#17603C'] : ['#F0ECE3', '#5B5D66']}>
           {existing ? 'CONFIGURED' : 'NOT CONFIGURED'}
         </Pill>
         <a
-          className="mono text-[10.5px] text-accent"
+          className="mono text-[12px] text-accent"
           href={provider.url}
           target="_blank"
           rel="noreferrer noopener"

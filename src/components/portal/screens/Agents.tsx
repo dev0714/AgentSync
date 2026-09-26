@@ -25,8 +25,8 @@ export type AgentTab = (typeof AGENT_TABS)[number]['k'];
 
 /** The prompt is stored as one string; render it as lines without inventing colour. */
 function promptLines(prompt: string | null) {
-  if (!prompt) return [{ text: 'No system prompt is set.', color: '#71717B' }];
-  return prompt.split('\n').map((text) => ({ text, color: '#C6C6CD' }));
+  if (!prompt) return [{ text: 'No system prompt is set.', color: '#5F616A' }];
+  return prompt.split('\n').map((text) => ({ text, color: '#2B2D33' }));
 }
 
 function setupGroups(agent: AgentDefinition) {
@@ -117,24 +117,24 @@ export default function Agents({
             onClick={() => onAgent(a.key)}
             className="cursor-pointer rounded-lg border p-3 text-left"
             style={{
-              background: agent.key === a.key ? '#1A1A1D' : '#141416',
-              borderColor: agent.key === a.key ? '#3A3A40' : '#242428',
+              background: agent.key === a.key ? '#F6F4EF' : '#FFFFFF',
+              borderColor: agent.key === a.key ? '#B9B4A8' : '#DAD5C8',
             }}
           >
             <div className="flex items-center gap-2">
               <span
                 className="size-1.5 rounded-full"
-                style={{ background: a.enabled ? '#4ADE80' : '#6A6A73' }}
+                style={{ background: a.enabled ? '#1F7A4D' : '#676972' }}
               />
-              <span className="flex-1 text-[13px] font-semibold">
+              <span className="flex-1 text-[14.5px] font-semibold">
                 {a.display_name}
               </span>
-              <span className="mono text-[9.5px] text-muted-2">
+              <span className="mono text-[11.5px] text-muted-2">
                 stage {a.stage_order}
               </span>
             </div>
-            <div className="mono mt-1 text-[10px] text-muted-3">{a.key}</div>
-            <div className="mt-1 line-clamp-2 text-[11.5px] text-muted">
+            <div className="mono mt-1 text-[11.5px] text-muted-3">{a.key}</div>
+            <div className="mt-1 line-clamp-2 text-[13px] text-muted">
               {a.purpose}
             </div>
           </button>
@@ -146,22 +146,22 @@ export default function Agents({
         <div className="flex flex-col items-start gap-4 p-4 lg:flex-row">
           <div className="min-w-0 flex-1">
             <div className="mb-1.5 flex flex-wrap items-center gap-2.5">
-              <span className="mono text-[11px] text-accent">{agent.key}</span>
-              <Pill c={agent.enabled ? ['#122E1E', '#6FD69C'] : ['#212125', '#9A9AA3']}>
+              <span className="mono text-[12.5px] text-accent">{agent.key}</span>
+              <Pill c={agent.enabled ? ['#DDEFE3', '#17603C'] : ['#F0ECE3', '#5B5D66']}>
                 {agent.enabled ? 'ENABLED' : 'DISABLED'}
               </Pill>
-              <span className="mono text-[10.5px] text-muted-2">
+              <span className="mono text-[12px] text-muted-2">
                 {agent.platform_default ? 'platform default' : 'tenant override'}
               </span>
               {agent.veto_power ? (
-                <Pill c={['#331515', '#F08A80']}>VETO</Pill>
+                <Pill c={['#F8E0DD', '#B42318']}>VETO</Pill>
               ) : null}
             </div>
-            <div className="text-[18px] font-semibold tracking-[-0.02em]">
+            <div className="text-[20px] font-semibold tracking-[-0.02em]">
               {agent.display_name}
             </div>
             <div
-              className="mt-1.5 max-w-[720px] text-[12.5px] text-muted"
+              className="mt-1.5 max-w-[720px] text-[14px] text-muted"
               style={{ lineHeight: 1.6 }}
             >
               {agent.purpose}
@@ -184,11 +184,11 @@ export default function Agents({
                 <button
                   key={c.title}
                   onClick={() => onSetupGroup(i)}
-                  className="cursor-pointer rounded-md border px-3 py-1.5 text-[11.5px] font-medium"
+                  className="cursor-pointer rounded-md border px-3 py-1.5 text-[13px] font-medium"
                   style={{
-                    background: sg.title === c.title ? '#F2F2F4' : '#141416',
-                    color: sg.title === c.title ? '#0A0A0B' : '#9A9AA3',
-                    borderColor: sg.title === c.title ? '#F2F2F4' : '#242428',
+                    background: sg.title === c.title ? '#15161A' : '#FFFFFF',
+                    color: sg.title === c.title ? '#FFFFFF' : '#5B5D66',
+                    borderColor: sg.title === c.title ? '#15161A' : '#DAD5C8',
                   }}
                 >
                   {c.title}
@@ -196,11 +196,11 @@ export default function Agents({
               ))}
             </div>
             <div className="mb-3 flex items-center gap-2.5">
-              <div className="text-[13px] font-semibold">{sg.title}</div>
-              <div className="mono text-[10px] text-muted-2">{sg.table}</div>
+              <div className="text-[14.5px] font-semibold">{sg.title}</div>
+              <div className="mono text-[11.5px] text-muted-2">{sg.table}</div>
             </div>
             {sg.rows.length === 0 ? (
-              <div className="text-[12.5px] text-muted">
+              <div className="text-[14px] text-muted">
                 {sg.missing ?? 'Nothing configured.'}
               </div>
             ) : (
@@ -212,12 +212,12 @@ export default function Agents({
         {tab === 'prompt' ? (
           <div className="p-4">
             <div className="mb-3 flex flex-wrap items-center gap-2.5">
-              <div className="text-[13px] font-semibold">System prompt</div>
-              <div className="mono text-[10px] text-muted-2">
+              <div className="text-[14.5px] font-semibold">System prompt</div>
+              <div className="mono text-[11.5px] text-muted-2">
                 agent_definitions.system_prompt
               </div>
               <div className="flex-1" />
-              <Pill c={['#33240F', '#F0B45E']}>
+              <Pill c={['#FBE7DA', '#963510']}>
                 AGENTS.md IN REPO TAKES PRECEDENCE
               </Pill>
             </div>
@@ -236,7 +236,7 @@ export default function Agents({
 
         {tab === 'tools' ? (
           agent.tools.length === 0 ? (
-            <div className="p-8 text-[12.5px] text-muted">
+            <div className="p-8 text-[14px] text-muted">
               This agent has no tool grants, so it can call nothing.
             </div>
           ) : (
@@ -251,10 +251,10 @@ export default function Agents({
                   key={t.tool_name}
                   className="grid min-w-[720px] grid-cols-[200px_1fr_100px] items-center gap-3 border-b border-line-faint px-4 py-2.5"
                 >
-                  <span className="mono text-[11.5px] text-ink-2">
+                  <span className="mono text-[13px] text-ink-2">
                     {t.tool_name}
                   </span>
-                  <span className="text-[12px] text-muted">{t.scope}</span>
+                  <span className="text-[13.5px] text-muted">{t.scope}</span>
                   <div className="text-right">
                     <Pill c={swatch(GRANT_COLOUR, t.grant_level)}>
                       {t.grant_level}
@@ -277,23 +277,23 @@ export default function Agents({
                     key={p.key}
                     className="rounded-lg border p-3"
                     style={{
-                      borderColor: current ? ACCENT : '#242428',
-                      background: current ? '#1A1A1D' : '#141416',
+                      borderColor: current ? ACCENT : '#DAD5C8',
+                      background: current ? '#F6F4EF' : '#FFFFFF',
                       opacity: p.enabled ? 1 : 0.55,
                     }}
                   >
-                    <div className="mono text-[9.5px] text-muted-2">
+                    <div className="mono text-[11.5px] text-muted-2">
                       STAGE {p.stage_order}
                       {p.optional_stage ? ' · OPTIONAL' : ''}
                       {p.enabled ? '' : ' · DISABLED'}
                     </div>
                     <div
-                      className="mt-1 text-[13px] font-semibold"
-                      style={{ color: current ? '#F2F2F4' : '#C6C6CD' }}
+                      className="mt-1 text-[14.5px] font-semibold"
+                      style={{ color: current ? '#15161A' : '#2B2D33' }}
                     >
                       {p.display_name}
                     </div>
-                    <div className="mt-1 text-[11.5px] text-muted">
+                    <div className="mt-1 text-[13px] text-muted">
                       {p.request_types.join(', ')}
                     </div>
                   </div>
@@ -306,13 +306,13 @@ export default function Agents({
         {tab === 'limits' ? (
           <div className="p-4">
             <div className="mb-3 flex items-center gap-2.5">
-              <div className="text-[13px] font-semibold">Limits &amp; budget</div>
-              <div className="mono text-[10px] text-muted-2">
+              <div className="text-[14.5px] font-semibold">Limits &amp; budget</div>
+              <div className="mono text-[11.5px] text-muted-2">
                 agent_definitions.limits
               </div>
             </div>
             {Object.keys(agent.limits).length === 0 ? (
-              <div className="text-[12.5px] text-muted">
+              <div className="text-[14px] text-muted">
                 No limits are configured for this agent, so it inherits the
                 project and tenant caps.
               </div>
@@ -327,7 +327,7 @@ export default function Agents({
 
         {tab === 'runs' ? (
           agent.runs.length === 0 ? (
-            <div className="p-8 text-[12.5px] text-muted">
+            <div className="p-8 text-[14px] text-muted">
               This agent has not run yet. Every model call is recorded per task
               with its token counts, cost and duration.
             </div>
@@ -346,25 +346,25 @@ export default function Agents({
                   key={`${r.reference}-${i}`}
                   className="grid min-w-[820px] grid-cols-[120px_minmax(160px,1fr)_100px_80px_80px_90px] items-center gap-3 border-b border-line-faint px-4 py-2.5"
                 >
-                  <span className="mono text-[11px] text-accent">
+                  <span className="mono text-[12.5px] text-accent">
                     {r.reference}
                   </span>
-                  <span className="mono text-[11px] text-ink-3">
+                  <span className="mono text-[12.5px] text-ink-3">
                     {r.model ?? '—'}
                     {r.failover ? (
                       <span className="text-warn"> · failover</span>
                     ) : null}
                   </span>
-                  <span className="mono text-[10.5px] text-muted">
+                  <span className="mono text-[12px] text-muted">
                     {compact(r.input_tokens)} / {compact(r.output_tokens)}
                   </span>
-                  <span className="mono text-[10.5px] text-muted">
+                  <span className="mono text-[12px] text-muted">
                     {money(r.cost)}
                   </span>
-                  <span className="mono text-[10.5px] text-muted">
+                  <span className="mono text-[12px] text-muted">
                     {duration(r.duration_seconds)}
                   </span>
-                  <span className="mono text-right text-[10.5px] text-muted-2">
+                  <span className="mono text-right text-[12px] text-muted-2">
                     <Ago iso={r.created_at} />
                   </span>
                 </div>

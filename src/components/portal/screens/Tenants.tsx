@@ -70,22 +70,22 @@ export default function Tenants({
             }}
             className="cursor-pointer rounded-lg border p-3 text-left"
             style={{
-              background: tenant.slug === t.slug ? '#1A1A1D' : '#141416',
-              borderColor: tenant.slug === t.slug ? '#3A3A40' : '#242428',
+              background: tenant.slug === t.slug ? '#F6F4EF' : '#FFFFFF',
+              borderColor: tenant.slug === t.slug ? '#B9B4A8' : '#DAD5C8',
             }}
           >
             <div className="flex items-center gap-2">
               <span
                 className="size-1.5 rounded-full"
                 style={{
-                  background: t.status === 'active' ? '#4ADE80' : '#F5A623',
+                  background: t.status === 'active' ? '#1F7A4D' : '#C2410C',
                 }}
               />
-              <span className="flex-1 text-[13px] font-semibold">{t.name}</span>
-              <span className="mono text-[9.5px] text-muted-2">{t.plan}</span>
+              <span className="flex-1 text-[14.5px] font-semibold">{t.name}</span>
+              <span className="mono text-[11.5px] text-muted-2">{t.plan}</span>
             </div>
-            <div className="mono mt-1 text-[10px] text-muted-3">{t.slug}</div>
-            <div className="mt-1 text-[11.5px] text-muted">
+            <div className="mono mt-1 text-[11.5px] text-muted-3">{t.slug}</div>
+            <div className="mt-1 text-[13px] text-muted">
               {t.project_count} project{t.project_count === 1 ? '' : 's'} ·{' '}
               {t.task_count} task{t.task_count === 1 ? '' : 's'}
             </div>
@@ -97,21 +97,21 @@ export default function Tenants({
         <div className="flex flex-col items-start gap-4 p-4 lg:flex-row lg:items-center">
           <div className="min-w-0 flex-1">
             <div className="mb-1.5 flex flex-wrap items-center gap-2.5">
-              <span className="mono text-[11px] text-accent">{tenant.slug}</span>
+              <span className="mono text-[12.5px] text-accent">{tenant.slug}</span>
               <Pill
                 c={
                   tenant.status === 'active'
-                    ? ['#122E1E', '#6FD69C']
-                    : ['#33240F', '#F5A623']
+                    ? ['#DDEFE3', '#17603C']
+                    : ['#FBE7DA', '#C2410C']
                 }
               >
                 {tenant.status.toUpperCase()}
               </Pill>
-              <span className="mono text-[10.5px] text-muted-2">
+              <span className="mono text-[12px] text-muted-2">
                 {tenant.plan ?? 'no plan'} · {tenant.data_region ?? 'no region'}
               </span>
             </div>
-            <div className="text-[18px] font-semibold tracking-[-0.02em]">
+            <div className="text-[20px] font-semibold tracking-[-0.02em]">
               {tenant.name}
             </div>
           </div>
@@ -128,11 +128,11 @@ export default function Tenants({
         {g.kind === 'form' ? (
           <div className="p-4">
             <div className="mb-3 flex items-center gap-2.5">
-              <div className="text-[13px] font-semibold">{g.title}</div>
-              <div className="mono text-[10px] text-muted-2">{g.table}</div>
+              <div className="text-[14.5px] font-semibold">{g.title}</div>
+              <div className="mono text-[11.5px] text-muted-2">{g.table}</div>
             </div>
             {g.rows.length === 0 ? (
-              <div className="text-[12.5px] text-muted" style={{ lineHeight: 1.6 }}>
+              <div className="text-[14px] text-muted" style={{ lineHeight: 1.6 }}>
                 {g.missing ?? 'Nothing configured.'}
               </div>
             ) : (
@@ -155,15 +155,15 @@ export default function Tenants({
                 className="grid min-w-[720px] grid-cols-[minmax(220px,1fr)_190px_140px_100px] items-center gap-3 border-b border-line-faint px-4 py-2.5"
               >
                 <div className="min-w-0">
-                  <div className="truncate text-[13px] font-medium">
+                  <div className="truncate text-[14.5px] font-medium">
                     {u.display_name ?? '—'}
                   </div>
-                  <div className="mono truncate text-[10.5px] text-muted-2">
+                  <div className="mono truncate text-[12px] text-muted-2">
                     {u.email ?? '—'}
                   </div>
                 </div>
-                <span className="mono text-[11.5px] text-ink-3">{u.role}</span>
-                <span className="text-[11.5px] text-muted">
+                <span className="mono text-[13px] text-ink-3">{u.role}</span>
+                <span className="text-[13px] text-muted">
                   <Ago iso={u.last_active_at} />
                 </span>
                 <div className="text-right">

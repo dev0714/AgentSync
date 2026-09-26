@@ -6,15 +6,26 @@
  * decides how a value that came from the database is drawn.
  */
 
-export const ACCENT = '#7C9CF5';
+export const ACCENT = '#0B6BFF';
+export const GATE = '#C2410C';
 
 export type Swatch = [background: string, foreground: string];
 
-export const OK: Swatch = ['#122E1E', '#6FD69C'];
-export const WARN: Swatch = ['#33240F', '#F5A623'];
-export const OFF: Swatch = ['#212125', '#9A9AA3'];
-export const NO: Swatch = ['#331515', '#F08A80'];
-export const INFO: Swatch = ['#132430', '#7FB6E0'];
+/*
+ * Light tints with dark text, every pair at 4.5:1 or better.
+ *
+ * GATE is reserved for "a person has to decide" — approval gates and the
+ * questions an agent is waiting on. CAUTION covers everything else worth a
+ * second look (a suspended account, a repaired check) so that orange keeps
+ * meaning one thing across the whole control plane.
+ */
+export const OK: Swatch = ['#DDEFE3', '#17603C'];
+export const GATE_SWATCH: Swatch = ['#FBE7DA', '#963510'];
+export const CAUTION: Swatch = ['#F5EDD2', '#6B5300'];
+export const WARN = CAUTION;
+export const OFF: Swatch = ['#F0ECE3', '#3A3C44'];
+export const NO: Swatch = ['#F8E0DD', '#962017'];
+export const INFO: Swatch = ['#E1ECFF', '#0550C4'];
 
 export type Row = { key: string; value: string; color?: string };
 export type Line = { text: string; color: string };
@@ -26,15 +37,15 @@ export const TASK_STATUS_COLOUR: Record<string, Swatch> = {
   queued: OFF,
   analysing: INFO,
   planning: INFO,
-  awaiting_plan_approval: WARN,
+  awaiting_plan_approval: GATE_SWATCH,
   implementing: INFO,
   testing: INFO,
   creating_pull_request: INFO,
   deploying_preview: INFO,
-  awaiting_merge_approval: WARN,
+  awaiting_merge_approval: GATE_SWATCH,
   deploying_production: INFO,
-  awaiting_production_approval: WARN,
-  needs_information: WARN,
+  awaiting_production_approval: GATE_SWATCH,
+  needs_information: GATE_SWATCH,
   completed: OK,
   failed: NO,
   cancelled: OFF,
@@ -47,7 +58,7 @@ export const DEPLOYMENT_STATUS_COLOUR: Record<string, Swatch> = {
   READY: OK,
   ERROR: NO,
   CANCELLED: OFF,
-  AWAITING_APPROVAL: WARN,
+  AWAITING_APPROVAL: GATE_SWATCH,
 };
 
 export const ENVIRONMENT_COLOUR: Record<string, Swatch> = {
@@ -57,10 +68,10 @@ export const ENVIRONMENT_COLOUR: Record<string, Swatch> = {
 };
 
 export const GATE_COLOUR: Record<string, Swatch> = {
-  plan: INFO,
-  merge: WARN,
-  production: NO,
-  information: OFF,
+  plan: GATE_SWATCH,
+  merge: GATE_SWATCH,
+  production: GATE_SWATCH,
+  information: GATE_SWATCH,
 };
 
 export const GRANT_COLOUR: Record<string, Swatch> = {
@@ -97,6 +108,22 @@ export const VERDICT_COLOUR: Record<string, Swatch> = {
   reject: NO,
 };
 
+/**
+ * A status as a person would say it: `awaiting_merge_approval` reads
+ * "Awaiting merge approval". The raw value stays available wherever it is
+ * the thing being searched for or copied.
+ */
+export function statusLabel(status: string | null | undefined): string {
+  if (!status) return '—';
+  const words = status.toLowerCase().replace(/[._]/g, ' ');
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** True for any status that is waiting on a person. */
+export function isGate(status: string | null | undefined): boolean {
+  return !!status && (status.startsWith('awaiting_') || status === 'needs_information');
+}
+
 export function swatch(map: Record<string, Swatch>, key: string | null): Swatch {
   return (key && map[key]) || OFF;
 }
@@ -104,12 +131,12 @@ export function swatch(map: Record<string, Swatch>, key: string | null): Swatch 
 /** Audit event types are open-ended, so colour by prefix rather than by list. */
 export function eventColour(type: string): string {
   if (type.startsWith('security') || type.includes('denied') || type.includes('failed')) {
-    return '#F08A80';
+    return '#962017';
   }
-  if (type.includes('approval') || type.includes('awaiting')) return '#F5A623';
-  if (type.includes('completed') || type.includes('approved')) return '#6FD69C';
-  if (type.startsWith('task.')) return '#7FB6E0';
-  return '#9A9AA3';
+  if (type.includes('approval') || type.includes('awaiting')) return '#963510';
+  if (type.includes('completed') || type.includes('approved')) return '#17603C';
+  if (type.startsWith('task.')) return '#0550C4';
+  return '#5B5D66';
 }
 
 /* ---- task list filters ---------------------------------------------- */
@@ -242,6 +269,6 @@ export function rowsFrom(
     .map(([key, value]) => ({
       key,
       value: display(value),
-      color: typeof value === 'boolean' ? (value ? '#6FD69C' : '#9A9AA3') : undefined,
+      color: typeof value === 'boolean' ? (value ? '#17603C' : '#5B5D66') : undefined,
     }));
 }

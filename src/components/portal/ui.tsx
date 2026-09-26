@@ -58,7 +58,7 @@ export function FieldRows({ prefix, rows }: { prefix: string; rows: Row[] }) {
           >
             <label
               className="mono truncate text-muted-2"
-              style={{ fontSize: 11 }}
+              style={{ fontSize: 12.5 }}
               htmlFor={id}
             >
               {r.key}
@@ -158,9 +158,9 @@ export function SectionTitle({
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2.5">
-      <div className="text-[13px] font-semibold">{title}</div>
+      <div className="text-[14.5px] font-semibold">{title}</div>
       {meta ? (
-        <div className="mono text-muted-2" style={{ fontSize: 10 }}>
+        <div className="mono text-muted-2" style={{ fontSize: 11.5 }}>
           {meta}
         </div>
       ) : null}
@@ -185,17 +185,17 @@ export function Tabs<T extends string>({
         <button
           key={t.k}
           onClick={() => onSelect(t.k)}
-          className="flex cursor-pointer items-center gap-2 border-b-2 px-4 py-[11px] text-[12.5px] font-medium"
+          className="flex cursor-pointer items-center gap-2 border-b-2 px-4 py-[11px] text-[14px] font-medium"
           style={{
             borderBottomColor: active === t.k ? 'var(--color-accent)' : 'transparent',
-            color: active === t.k ? '#F2F2F4' : '#71717B',
+            color: active === t.k ? '#15161A' : '#5F616A',
           }}
         >
           {t.label}
           {t.dot && t.dot !== 'transparent' ? (
             <span
               className="size-1.5 rounded-full"
-              style={{ background: active === t.k ? t.dot : '#2E2E33' }}
+              style={{ background: active === t.k ? t.dot : '#E4E0D6' }}
             />
           ) : null}
         </button>
@@ -211,7 +211,7 @@ export function CodeBlock({ lines }: { lines: Line[] }) {
         <div
           key={i}
           className="mono whitespace-pre"
-          style={{ fontSize: 11.5, lineHeight: 1.75, color: l.color }}
+          style={{ fontSize: 13, lineHeight: 1.75, color: l.color }}
         >
           {l.text || ' '}
         </div>
@@ -244,11 +244,11 @@ export function CopyBlock({ text }: { text: string }) {
     <div className="relative">
       <button
         onClick={copy}
-        className="mono absolute top-2 right-2 cursor-pointer rounded-[5px] border border-line bg-raised px-2 py-1 text-[10px] text-muted-2 hover:text-ink-2"
+        className="mono absolute top-2 right-2 cursor-pointer rounded-[5px] border border-line bg-raised px-2 py-1 text-[11.5px] text-muted-2 hover:text-ink-2"
       >
         {copied ? 'COPIED' : 'COPY'}
       </button>
-      <pre className="mono overflow-x-auto rounded-lg border border-line bg-canvas p-3.5 pr-16 text-ink-3" style={{ fontSize: 11.5, lineHeight: 1.75 }}>
+      <pre className="mono overflow-x-auto rounded-lg border border-line bg-canvas p-3.5 pr-16 text-ink-3" style={{ fontSize: 13, lineHeight: 1.75 }}>
         {text}
       </pre>
     </div>
@@ -282,15 +282,15 @@ export function SetupSteps({ steps }: { steps: SetupStep[] }) {
         <li key={s.title} className="grid grid-cols-[26px_1fr] gap-3">
           <div
             className="mono mt-px flex size-[22px] items-center justify-center rounded-full border border-line text-muted-2"
-            style={{ fontSize: 10 }}
+            style={{ fontSize: 11.5 }}
           >
             {i + 1}
           </div>
           <div className="flex min-w-0 flex-col gap-2">
-            <div className="text-[13px] font-semibold text-ink-2">{s.title}</div>
+            <div className="text-[14.5px] font-semibold text-ink-2">{s.title}</div>
             {s.body ? (
               <div
-                className={`text-[12.5px] text-muted ${s.wide ? '' : 'max-w-[76ch]'}`}
+                className={`text-[14px] text-muted ${s.wide ? '' : 'max-w-[76ch]'}`}
                 style={{ lineHeight: 1.6 }}
               >
                 {s.body}
@@ -298,7 +298,7 @@ export function SetupSteps({ steps }: { steps: SetupStep[] }) {
             ) : null}
             {s.href ? (
               <a
-                className="mono w-fit text-[11px] text-accent"
+                className="mono w-fit text-[12.5px] text-accent"
                 href={s.href.url}
                 target="_blank"
                 rel="noreferrer noopener"
@@ -353,15 +353,15 @@ export function Empty({
 }) {
   return (
     <div className="card flex flex-col items-start gap-2 p-8">
-      <div className="text-[13.5px] font-semibold text-ink-2">{title}</div>
+      <div className="text-[15px] font-semibold text-ink-2">{title}</div>
       <div
-        className="max-w-[62ch] text-[12.5px] text-muted"
+        className="max-w-[62ch] text-[14px] text-muted"
         style={{ lineHeight: 1.6 }}
       >
         {detail}
       </div>
       {table ? (
-        <div className="mono mt-1 text-[10px] text-muted-3">{table}</div>
+        <div className="mono mt-1 text-[11.5px] text-muted-3">{table}</div>
       ) : null}
     </div>
   );

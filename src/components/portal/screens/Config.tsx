@@ -108,14 +108,14 @@ export function Project_({
             ))}
           </select>
         ) : (
-          <div className="text-[18px] font-semibold tracking-[-0.02em]">
+          <div className="text-[20px] font-semibold tracking-[-0.02em]">
             {project.name}
           </div>
         )}
-        <Pill c={project.enabled ? ['#122E1E', '#6FD69C'] : ['#212125', '#9A9AA3']}>
+        <Pill c={project.enabled ? ['#DDEFE3', '#17603C'] : ['#F0ECE3', '#5B5D66']}>
           {project.enabled ? 'ACTIVE' : 'DISABLED'}
         </Pill>
-        <span className="mono text-[11px] text-muted-2">
+        <span className="mono text-[12.5px] text-muted-2">
           {project.repository?.github_owner && project.repository?.repository
             ? `${project.repository.github_owner}/${project.repository.repository}`
             : project.slug}
@@ -131,12 +131,12 @@ export function Project_({
           />
         </div>
         <div className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-3">
-          <div className="text-[13px] font-semibold">{g.title}</div>
-          <div className="mono text-[10px] text-muted-2">{g.table}</div>
+          <div className="text-[14.5px] font-semibold">{g.title}</div>
+          <div className="mono text-[11.5px] text-muted-2">{g.table}</div>
         </div>
         <div className="p-4">
           {g.rows.length === 0 ? (
-            <div className="text-[12.5px] text-muted" style={{ lineHeight: 1.6 }}>
+            <div className="text-[14px] text-muted" style={{ lineHeight: 1.6 }}>
               {g.missing ?? 'Nothing configured.'}
             </div>
           ) : (
@@ -168,7 +168,7 @@ export function Sources({ sources }: { sources: SourceRow[] }) {
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="text-[12.5px] text-muted" style={{ lineHeight: 1.6 }}>
+      <div className="text-[14px] text-muted" style={{ lineHeight: 1.6 }}>
         Systems permitted to submit tasks. Keys are stored hashed; signing
         secrets live in the secret manager and are referenced by identifier
         only.
@@ -190,21 +190,21 @@ export function Sources({ sources }: { sources: SourceRow[] }) {
             className={`${SRC_GRID} border-b border-line-faint px-3.5 py-[11px]`}
           >
             <div className="min-w-0">
-              <div className="truncate text-[13px] font-medium">{s.name}</div>
-              <div className="mono text-[10.5px] text-muted-2">
+              <div className="truncate text-[14.5px] font-medium">{s.name}</div>
+              <div className="mono text-[12px] text-muted-2">
                 last used <Ago iso={s.last_used_at} />
               </div>
             </div>
-            <span className="mono text-[11px] text-ink-2">
+            <span className="mono text-[12.5px] text-ink-2">
               {s.api_key_prefix}…
             </span>
-            <span className="mono text-[10.5px] text-muted">
+            <span className="mono text-[12px] text-muted">
               {s.ip_allowlist.length ? s.ip_allowlist.join(', ') : 'any'}
             </span>
-            <span className="mono text-[10.5px] text-muted">
+            <span className="mono text-[12px] text-muted">
               {s.rate_limit_per_minute}/min
             </span>
-            <span className="mono text-[10.5px] text-muted">{s.task_count}</span>
+            <span className="mono text-[12px] text-muted">{s.task_count}</span>
             <div className="text-right">
               <Pill c={swatch(STATE_COLOUR, s.state)}>{s.state}</Pill>
             </div>
@@ -241,17 +241,17 @@ export function Usage_({
             <div className="text-2xl leading-none font-semibold tracking-[-0.02em]">
               {uc.value}
             </div>
-            <div className="text-[11px] text-muted">{uc.sub}</div>
+            <div className="text-[12.5px] text-muted">{uc.sub}</div>
           </div>
         ))}
       </div>
 
       <div className="card p-4">
-        <div className="mb-3.5 text-[13px] font-semibold">
+        <div className="mb-3.5 text-[14.5px] font-semibold">
           Spend by project · current month
         </div>
         {spending.length === 0 ? (
-          <div className="text-[12.5px] text-muted" style={{ lineHeight: 1.6 }}>
+          <div className="text-[14px] text-muted" style={{ lineHeight: 1.6 }}>
             No model calls have been billed to this tenant yet. Every call a
             worker makes is recorded per task and per agent, so this fills in as
             soon as work runs.
@@ -263,16 +263,16 @@ export function Usage_({
                 key={p.id}
                 className="grid grid-cols-[minmax(140px,200px)_1fr_80px_60px] items-center gap-3"
               >
-                <div className="truncate text-[12.5px]">{p.name}</div>
+                <div className="truncate text-[14px]">{p.name}</div>
                 <Bar
                   pct={`${peak > 0 ? Math.round((Number(p.spend) / peak) * 100) : 0}%`}
                   color={ACCENT}
                   height={6}
                 />
-                <div className="mono text-right text-[11px] text-ink-2">
+                <div className="mono text-right text-[12.5px] text-ink-2">
                   {money(p.spend)}
                 </div>
-                <div className="mono text-[10.5px] text-muted-2">
+                <div className="mono text-[12px] text-muted-2">
                   {p.monthly_ai_budget ? money(p.monthly_ai_budget) : '—'}
                 </div>
               </div>

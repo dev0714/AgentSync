@@ -31,9 +31,9 @@ function Card({
   return (
     <div className="card overflow-hidden">
       <div className="flex items-center gap-2.5 border-b border-line px-4 py-3">
-        <div className="text-[13px] font-semibold">{title}</div>
+        <div className="text-[14.5px] font-semibold">{title}</div>
         {scope ? (
-          <div className="mono text-[10px] text-muted-2">{scope}</div>
+          <div className="mono text-[11.5px] text-muted-2">{scope}</div>
         ) : null}
       </div>
       <div className="p-4">{children}</div>
@@ -61,9 +61,9 @@ function Setting({
 }) {
   return (
     <div className="grid grid-cols-1 gap-x-5 gap-y-0.5 border-b border-line-faint py-2 last:border-b-0 sm:grid-cols-[minmax(200px,240px)_minmax(140px,180px)_1fr]">
-      <div className="mono text-[11px] text-ink-2">{name}</div>
-      <div className="mono text-[11px] text-accent">{value}</div>
-      <div className="text-[11.5px] text-muted-2" style={{ lineHeight: 1.5 }}>
+      <div className="mono text-[12.5px] text-ink-2">{name}</div>
+      <div className="mono text-[12.5px] text-accent">{value}</div>
+      <div className="text-[13px] text-muted-2" style={{ lineHeight: 1.5 }}>
         {why}
       </div>
     </div>
@@ -399,7 +399,7 @@ export default function Connections({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="text-[12.5px] text-muted" style={{ lineHeight: 1.6 }}>
+      <div className="text-[14px] text-muted" style={{ lineHeight: 1.6 }}>
         Every external system AgentSync talks to. Credentials are never stored
         here in plain text — each connection holds a reference into the secret
         manager, and any one of them can be disabled without touching project
@@ -416,25 +416,25 @@ export default function Connections({
             <button
               key={t.name}
               onClick={() => onTab(t.tab)}
-              className="card flex cursor-pointer flex-col gap-2 p-4 text-left hover:border-[#3A3A40]"
+              className="card flex cursor-pointer flex-col gap-2 p-4 text-left hover:border-[#B9B4A8]"
             >
               <div className="flex items-center gap-2">
                 <span
                   className="size-1.5 rounded-full"
-                  style={{ background: t.connected ? '#4ADE80' : '#6A6A73' }}
+                  style={{ background: t.connected ? '#1F7A4D' : '#676972' }}
                 />
-                <span className="flex-1 text-[13.5px] font-semibold">
+                <span className="flex-1 text-[15px] font-semibold">
                   {t.name}
                 </span>
-                <Pill c={t.connected ? ['#122E1E', '#6FD69C'] : ['#212125', '#9A9AA3']}>
+                <Pill c={t.connected ? ['#DDEFE3', '#17603C'] : ['#F0ECE3', '#5B5D66']}>
                   {t.connected ? 'CONNECTED' : 'NOT CONNECTED'}
                 </Pill>
               </div>
-              <div className="mono text-[10.5px] text-ink-3">{t.target}</div>
-              <div className="text-[11.5px] text-muted" style={{ lineHeight: 1.5 }}>
+              <div className="mono text-[12px] text-ink-3">{t.target}</div>
+              <div className="text-[13px] text-muted" style={{ lineHeight: 1.5 }}>
                 {t.meta}
               </div>
-              <div className="mono mt-1 text-[10px] text-accent">
+              <div className="mono mt-1 text-[11.5px] text-accent">
                 {t.connected ? 'REVIEW →' : 'SET UP →'}
               </div>
             </button>
@@ -443,7 +443,7 @@ export default function Connections({
       ) : null}
 
       {tab === 'github' ? (
-        <div className="flex flex-col gap-4">
+        <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
           {github ? null : (
             <Card title="Connect GitHub" scope="four steps, once per tenant">
               <SetupSteps steps={githubSteps()} />
@@ -459,7 +459,7 @@ export default function Connections({
       ) : null}
 
       {tab === 'deploy' ? (
-        <div className="flex flex-col gap-4">
+        <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
           {deployment ? null : (
             <Card title="Connect Vercel" scope="optional — tasks reach a pull request without it">
               <SetupSteps steps={vercelSteps()} />

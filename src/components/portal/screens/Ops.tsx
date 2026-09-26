@@ -42,7 +42,7 @@ export function Approvals({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="text-[12.5px] text-muted" style={{ lineHeight: 1.6 }}>
+      <div className="text-[14px] text-muted" style={{ lineHeight: 1.6 }}>
         Every gate the platform is holding. Nothing below has touched a
         protected branch or a production deployment.
       </div>
@@ -54,22 +54,22 @@ export function Approvals({
           <div className="min-w-0 flex-1">
             <div className="mb-1.5 flex flex-wrap items-center gap-2.5">
               <Pill c={swatch(GATE_COLOUR, ap.gate)}>{ap.gate}</Pill>
-              <span className="mono text-[11px] font-medium text-accent">
+              <span className="mono text-[12.5px] font-medium text-accent">
                 {ap.reference}
               </span>
-              <span className="mono text-[10.5px] text-muted-2">
+              <span className="mono text-[12px] text-muted-2">
                 waiting <Ago iso={ap.requested_at} />
               </span>
               {ap.project ? (
-                <span className="mono text-[10.5px] text-muted-3">
+                <span className="mono text-[12px] text-muted-3">
                   {ap.project}
                 </span>
               ) : null}
             </div>
-            <div className="mb-1 text-[14px] font-semibold tracking-[-0.01em]">
+            <div className="mb-1 text-[15px] font-semibold tracking-[-0.01em]">
               {ap.title}
             </div>
-            <div className="text-[12px] text-muted" style={{ lineHeight: 1.5 }}>
+            <div className="text-[13.5px] text-muted" style={{ lineHeight: 1.5 }}>
               {GATE_DETAIL[ap.gate] ?? `Task status: ${ap.status}`}
             </div>
           </div>
@@ -119,14 +119,14 @@ export function Deployments({ deployments }: { deployments: DeploymentRow[] }) {
             </Pill>
           </div>
           <div className="min-w-0">
-            <div className="mono truncate text-[11.5px] text-ink-2">
+            <div className="mono truncate text-[13px] text-ink-2">
               {dp.url ?? '—'}
             </div>
-            <div className="mono truncate text-[10.5px] text-muted-2">
+            <div className="mono truncate text-[12px] text-muted-2">
               {dp.branch ?? '—'}
             </div>
           </div>
-          <span className="mono text-[10.5px] text-muted">
+          <span className="mono text-[12px] text-muted">
             {dp.commit_sha ? dp.commit_sha.slice(0, 7) : '—'}
           </span>
           <div>
@@ -134,10 +134,10 @@ export function Deployments({ deployments }: { deployments: DeploymentRow[] }) {
               {dp.status}
             </Pill>
           </div>
-          <span className="mono text-[10.5px] text-muted">
+          <span className="mono text-[12px] text-muted">
             {duration(dp.build_duration_seconds)}
           </span>
-          <span className="mono text-right text-[10.5px] text-muted-2">
+          <span className="mono text-right text-[12px] text-muted-2">
             <Ago iso={dp.started_at} />
           </span>
         </div>
@@ -163,7 +163,7 @@ export function Audit({ audit }: { audit: AuditRow[] }) {
         <div className="flex items-center gap-3 border-b border-line px-3.5 py-[11px]">
           <div className="label">TENANT-SCOPED · APPEND-ONLY · RLS ENFORCED</div>
           <div className="flex-1" />
-          <div className="mono text-[10.5px] text-muted-2">
+          <div className="mono text-[12px] text-muted-2">
             LAST {audit.length}
           </div>
         </div>
@@ -175,16 +175,16 @@ export function Audit({ audit }: { audit: AuditRow[] }) {
             key={al.id}
             className="grid grid-cols-[76px_220px_1fr] items-baseline gap-3 border-b border-line-faint px-3.5 py-2.5"
           >
-            <span className="mono text-[10.5px] text-muted-2">
+            <span className="mono text-[12px] text-muted-2">
               {clock(al.created_at)}
             </span>
             <span
-              className="mono text-[11px]"
+              className="mono text-[12.5px]"
               style={{ color: eventColour(al.event_type) }}
             >
               {al.event_type}
             </span>
-            <span className="mono text-[11px] text-muted">
+            <span className="mono text-[12.5px] text-muted">
               {al.message ?? ''}
               {al.actor ? (
                 <span className="text-muted-3"> · {al.actor}</span>

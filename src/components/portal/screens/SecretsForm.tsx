@@ -99,23 +99,23 @@ export default function SecretsForm({
               key={s.reference}
               className={`${GRID} border-b border-line-faint px-3.5 py-2.5 last:border-b-0`}
             >
-              <span className="mono truncate text-[11px] text-ink-2">
+              <span className="mono truncate text-[12.5px] text-ink-2">
                 {s.reference}
               </span>
-              <span className="text-[12px] text-muted">{s.used_by ?? '—'}</span>
-              <span className="mono text-[10.5px] text-muted-2">
+              <span className="text-[13.5px] text-muted">{s.used_by ?? '—'}</span>
+              <span className="mono text-[12px] text-muted-2">
                 {s.rotated_at ? <Ago iso={s.rotated_at} /> : 'never'}
               </span>
-              <span className="mono text-[10.5px] text-muted-2">
+              <span className="mono text-[12px] text-muted-2">
                 {s.rotation_days ?? '—'}d
               </span>
-              <Pill c={s.revoked ? ['#331515', '#F08A80'] : ['#122E1E', '#6FD69C']}>
+              <Pill c={s.revoked ? ['#F8E0DD', '#B42318'] : ['#DDEFE3', '#17603C']}>
                 {s.revoked ? 'REVOKED' : 'ACTIVE'}
               </Pill>
               <div className="flex justify-end gap-2.5">
                 <button
                   type="button"
-                  className="mono cursor-pointer text-[10.5px] text-muted-2 hover:text-ink-2"
+                  className="mono cursor-pointer text-[12px] text-muted-2 hover:text-ink-2"
                   disabled={busy}
                   onClick={() => rotate(s)}
                   title="Record that you have just rotated this secret"
@@ -124,7 +124,7 @@ export default function SecretsForm({
                 </button>
                 <button
                   type="button"
-                  className="mono cursor-pointer text-[10.5px] text-muted-2 hover:text-ink-2"
+                  className="mono cursor-pointer text-[12px] text-muted-2 hover:text-ink-2"
                   disabled={busy}
                   onClick={() => setRevoked(s, !s.revoked)}
                 >
@@ -132,7 +132,7 @@ export default function SecretsForm({
                 </button>
                 <button
                   type="button"
-                  className="mono cursor-pointer text-[10.5px] text-muted-2 hover:text-danger"
+                  className="mono cursor-pointer text-[12px] text-muted-2 hover:text-danger"
                   disabled={busy}
                   onClick={() =>
                     call('DELETE', undefined, {

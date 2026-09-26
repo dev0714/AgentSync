@@ -90,28 +90,28 @@ export default function WebhookForm({
               className={`${GRID} border-b border-line-faint px-3.5 py-2.5 last:border-b-0`}
             >
               <span
-                className="mono text-[10px]"
-                style={{ color: h.direction === 'IN' ? '#7FB6E0' : '#6FD69C' }}
+                className="mono text-[11.5px]"
+                style={{ color: h.direction === 'IN' ? '#0550C4' : '#17603C' }}
               >
                 {h.direction}
               </span>
               <div className="min-w-0">
-                <div className="mono truncate text-[11.5px] text-ink-2">{h.path}</div>
-                <div className="text-[11px] text-muted-2">{h.note ?? ''}</div>
+                <div className="mono truncate text-[13px] text-ink-2">{h.path}</div>
+                <div className="text-[12.5px] text-muted-2">{h.note ?? ''}</div>
               </div>
-              <span className="mono truncate text-[10.5px] text-muted">
+              <span className="mono truncate text-[12px] text-muted">
                 {h.signing_secret_ref ?? '—'}
               </span>
-              <span className="mono text-[10.5px] text-muted-2">
+              <span className="mono text-[12px] text-muted-2">
                 {h.replay_window_seconds ?? '—'}s
               </span>
-              <Pill c={h.enabled ? ['#122E1E', '#6FD69C'] : ['#212125', '#9A9AA3']}>
+              <Pill c={h.enabled ? ['#DDEFE3', '#17603C'] : ['#F0ECE3', '#5B5D66']}>
                 {h.enabled ? 'ENABLED' : 'DISABLED'}
               </Pill>
               <div className="text-right">
                 <button
                   type="button"
-                  className="mono cursor-pointer text-[10.5px] text-muted-2 hover:text-danger"
+                  className="mono cursor-pointer text-[12px] text-muted-2 hover:text-danger"
                   disabled={busy}
                   onClick={() =>
                     call('DELETE', undefined, {

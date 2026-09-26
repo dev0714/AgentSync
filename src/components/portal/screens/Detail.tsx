@@ -11,8 +11,10 @@ import {
   compact,
   duration,
   eventColour,
+  isGate,
   money,
   percent,
+  statusLabel,
   swatch,
 } from '@/lib/portal-ui';
 import { Bar, CodeBlock, ColLabel, Pill, SectionTitle, Tabs } from '../ui';
@@ -28,10 +30,10 @@ const TABS: { k: DetailTab; label: string }[] = [
 ];
 
 const ACTION_COLOUR: Record<string, string> = {
-  CREATED: '#6FD69C',
-  MODIFIED: '#F0B45E',
-  DELETED: '#F08A80',
-  RENAMED: '#7FB6E0',
+  CREATED: '#17603C',
+  MODIFIED: '#963510',
+  DELETED: '#B42318',
+  RENAMED: '#0550C4',
 };
 
 function Rail({ title, children }: { title: string; children: React.ReactNode }) {
@@ -43,10 +45,30 @@ function Rail({ title, children }: { title: string; children: React.ReactNode })
   );
 }
 
+/** What approving each gate lets happen next — said before anyone clicks. */
+const GATE_BANNER: Record<string, { title: string; body: string }> = {
+  awaiting_plan_approval: {
+    title: 'The plan is waiting for your approval',
+    body: 'No code has been written. Approving lets the Developer agent start on a branch; nothing touches the default branch.',
+  },
+  awaiting_merge_approval: {
+    title: 'The pull request is waiting for your approval',
+    body: 'Checks and the Review agent have finished. Approving merges the pull request; the agent is never allowed to merge its own work.',
+  },
+  awaiting_production_approval: {
+    title: 'The release is waiting for your approval',
+    body: 'The change is merged and staged. Approving deploys it to production; the rollback plan below is what runs if it fails.',
+  },
+  needs_information: {
+    title: 'The agent needs an answer',
+    body: 'Work is paused until someone answers the open questions on the plan.',
+  },
+};
+
 /** A stage the task has actually recorded, never one inferred from the status. */
 function nothing(text: string) {
   return (
-    <div className="p-[18px] text-[12.5px] text-muted" style={{ lineHeight: 1.6 }}>
+    <div className="p-[18px] text-[14px] text-muted" style={{ lineHeight: 1.6 }}>
       {text}
     </div>
   );
@@ -89,9 +111,9 @@ export default function Detail({
   const back = (
     <button
       onClick={onBack}
-      className="mono w-fit cursor-pointer text-[11px] text-accent"
+      className="w-fit cursor-pointer text-[13.5px] font-medium text-agent-ink hover:underline"
     >
-      ← ALL TASKS
+      ← All tasks
     </button>
   );
 
@@ -99,7 +121,7 @@ export default function Detail({
     return (
       <div className="flex flex-col gap-4">
         {back}
-        <div className="card p-8 text-[12.5px] text-danger">{error}</div>
+        <div className="card p-8 text-[14px] text-danger">{error}</div>
       </div>
     );
   }
@@ -108,7 +130,7 @@ export default function Detail({
     return (
       <div className="flex flex-col gap-4">
         {back}
-        <div className="card p-8 text-[12.5px] text-muted">Loading…</div>
+        <div className="card p-8 text-[14px] text-muted">Loading…</div>
       </div>
     );
   }
@@ -118,6 +140,15 @@ export default function Detail({
   const deletions = files.reduce((n, f) => n + f.deletions, 0);
   const peak = Math.max(...files.map((f) => f.additions + f.deletions), 1);
   const buildOutput = commands.find((c) => c.sanitised_output)?.sanitised_output;
+
+  const banner = isGate(task.status)
+    ? (GATE_BANNER[task.status] ?? {
+        title: 'This task is waiting for a person',
+        body: 'Nothing moves past this gate until someone with approval rights decides.',
+      })
+    : null;
+  // The last few recorded events, newest first — the rail's "where it is".
+  const recent = events.slice(-6).reverse();
 
   const steps: string[] = Array.isArray(plan?.steps)
     ? (plan.steps as unknown[]).map((s) =>
@@ -136,25 +167,44 @@ export default function Detail({
               {task.external_reference ?? task.correlation_id.slice(0, 8)}
             </span>
             <Pill c={swatch(TASK_STATUS_COLOUR, task.status)}>
-              {task.status.toUpperCase()}
+              {statusLabel(task.status)}
             </Pill>
-            <span className="mono text-[10.5px] text-muted-2">
+            <span className="mono text-[12px] text-muted-2">
               corr: {task.correlation_id}
             </span>
             {detail.project ? (
-              <span className="mono text-[10.5px] text-muted-3">
+              <span className="mono text-[12px] text-muted-3">
                 {detail.project.name}
               </span>
             ) : null}
           </div>
           <div
-            className="text-[22px] font-semibold tracking-[-0.02em]"
+            className="display text-[28px] leading-tight font-bold tracking-[-0.03em]"
             style={{ textWrap: 'pretty' }}
           >
             {task.title}
           </div>
         </div>
       </div>
+
+      {banner ? (
+        <div
+          role="status"
+          className="flex flex-col gap-3 rounded-[18px] border border-[#F0C9A8] bg-gate-tint px-5 py-4 sm:flex-row sm:items-center"
+        >
+          <span className="pulse-ring relative flex size-9 shrink-0 items-center justify-center rounded-full bg-gate text-white">
+            <span className="size-2.5 rounded-full bg-white" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="text-[15.5px] font-semibold text-gate-ink">
+              {banner.title}
+            </div>
+            <div className="text-[14px] text-ink-3" style={{ lineHeight: 1.55 }}>
+              {banner.body}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[1fr_328px]">
         <div className="card min-w-0 overflow-hidden">
@@ -174,14 +224,14 @@ export default function Detail({
                   meta={`v${plan.version} · ${clock(plan.created_at)}`}
                   right={
                     plan.complexity ? (
-                      <Pill c={['#122E1E', '#6FD69C']}>
+                      <Pill c={['#DDEFE3', '#17603C']}>
                         COMPLEXITY: {plan.complexity.toUpperCase()}
                       </Pill>
                     ) : undefined
                   }
                 />
                 <div
-                  className="mt-3.5 mb-[18px] text-[13.5px] text-ink-3"
+                  className="mt-3.5 mb-[18px] text-[15px] text-ink-3"
                   style={{ lineHeight: 1.6, textWrap: 'pretty' }}
                 >
                   {plan.summary}
@@ -193,11 +243,11 @@ export default function Detail({
                     <div className="flex flex-col gap-[7px]">
                       {steps.map((s, i) => (
                         <div key={i} className="flex items-baseline gap-[9px]">
-                          <span className="mono text-[10px] text-accent">
+                          <span className="mono text-[11.5px] text-accent">
                             {String(i + 1).padStart(2, '0')}
                           </span>
                           <span
-                            className="text-[12.5px] text-ink-3"
+                            className="text-[14px] text-ink-3"
                             style={{ lineHeight: 1.55 }}
                           >
                             {s}
@@ -214,7 +264,7 @@ export default function Detail({
                           {plan.assumptions.map((a) => (
                             <div
                               key={a}
-                              className="rounded-md border border-line bg-raised px-3 py-2 text-[12px] text-muted"
+                              className="rounded-md border border-line bg-raised px-3 py-2 text-[13.5px] text-muted"
                               style={{ lineHeight: 1.5 }}
                             >
                               {a}
@@ -230,10 +280,10 @@ export default function Detail({
                           {plan.open_questions.map((q) => (
                             <div
                               key={q}
-                              className="rounded-md border px-3 py-2 text-[12px] text-warn-2"
+                              className="rounded-md border px-3 py-2 text-[13.5px] text-warn-2"
                               style={{
-                                borderColor: '#4A3616',
-                                background: '#1A1408',
+                                borderColor: '#F0C9A8',
+                                background: '#FBE7DA',
                                 lineHeight: 1.5,
                               }}
                             >
@@ -247,7 +297,7 @@ export default function Detail({
                       <div>
                         <div className="label mb-[9px]">ROLLBACK</div>
                         <div
-                          className="text-[12.5px] text-muted"
+                          className="text-[14px] text-muted"
                           style={{ lineHeight: 1.55 }}
                         >
                           {plan.rollback_plan}
@@ -268,12 +318,12 @@ export default function Detail({
                 <SectionTitle
                   title="File changes"
                   right={
-                    <div className="mono text-[10px] text-muted-2">
+                    <div className="mono text-[11.5px] text-muted-2">
                       {files.length} files
                     </div>
                   }
                 />
-                <div className="mono mt-1 mb-3.5 text-[11px]">
+                <div className="mono mt-1 mb-3.5 text-[12.5px]">
                   <span className="text-ok">+{additions}</span>{' '}
                   <span className="text-danger">−{deletions}</span>
                 </div>
@@ -285,15 +335,15 @@ export default function Detail({
                       className="flex flex-wrap items-center gap-3 border-b border-line-faint px-3.5 py-2.5 last:border-b-0"
                     >
                       <span
-                        className="mono w-[70px] shrink-0 text-[9.5px]"
-                        style={{ color: ACTION_COLOUR[f.action] ?? '#9A9AA3' }}
+                        className="mono w-[70px] shrink-0 text-[11.5px]"
+                        style={{ color: ACTION_COLOUR[f.action] ?? '#5B5D66' }}
                       >
                         {f.action}
                       </span>
-                      <span className="mono min-w-0 flex-1 truncate text-[11.5px] text-ink-2">
+                      <span className="mono min-w-0 flex-1 truncate text-[13px] text-ink-2">
                         {f.file_path}
                       </span>
-                      <span className="mono text-[10.5px] text-muted-2">
+                      <span className="mono text-[12px] text-muted-2">
                         +{f.additions} / −{f.deletions}
                       </span>
                       <div className="flex w-[60px] items-center gap-px">
@@ -319,7 +369,7 @@ export default function Detail({
                       </Pill>
                     </div>
                     <div
-                      className="text-[12.5px] text-ink-3"
+                      className="text-[14px] text-ink-3"
                       style={{ lineHeight: 1.6 }}
                     >
                       {review.summary}
@@ -338,11 +388,11 @@ export default function Detail({
                         <Pill c={swatch(SEVERITY_COLOUR, sf.severity)}>
                           {sf.severity}
                         </Pill>
-                        <span className="mono text-[11px] text-ink-2">
+                        <span className="mono text-[12.5px] text-ink-2">
                           {sf.file_path}
                           {sf.line_number ? `:${sf.line_number}` : ''}
                         </span>
-                        <span className="text-[12px] text-muted">
+                        <span className="text-[13.5px] text-muted">
                           {sf.description}
                         </span>
                       </div>
@@ -360,7 +410,7 @@ export default function Detail({
               )
             ) : (
               <div className="p-[18px]">
-                <div className="mb-3.5 text-[13px] font-semibold">
+                <div className="mb-3.5 text-[14.5px] font-semibold">
                   Validation runs
                 </div>
                 <div className="overflow-hidden rounded-lg border border-line">
@@ -369,16 +419,16 @@ export default function Detail({
                       key={`${c.command}-${i}`}
                       className="flex flex-wrap items-center gap-3 border-b border-line-faint px-3.5 py-2.5 last:border-b-0"
                     >
-                      <span className="mono w-[120px] shrink-0 text-[9.5px] text-muted-2">
+                      <span className="mono w-[120px] shrink-0 text-[11.5px] text-muted-2">
                         {c.command_type}
                       </span>
-                      <span className="mono min-w-0 flex-1 truncate text-[11.5px] text-ink-2">
+                      <span className="mono min-w-0 flex-1 truncate text-[13px] text-ink-2">
                         {c.command}
                       </span>
-                      <span className="mono text-[10.5px] text-muted-2">
+                      <span className="mono text-[12px] text-muted-2">
                         exit {c.exit_code ?? '—'}
                       </span>
-                      <span className="mono w-[56px] text-right text-[10.5px] text-muted">
+                      <span className="mono w-[56px] text-right text-[12px] text-muted">
                         {duration(c.duration_seconds)}
                       </span>
                       <Pill c={swatch(RESULT_COLOUR, c.result)}>{c.result}</Pill>
@@ -392,7 +442,7 @@ export default function Detail({
                     <CodeBlock
                       lines={buildOutput
                         .split('\n')
-                        .map((text) => ({ text, color: '#9A9AA3' }))}
+                        .map((text) => ({ text, color: '#5B5D66' }))}
                     />
                   </div>
                 ) : null}
@@ -405,7 +455,7 @@ export default function Detail({
               <div>
                 <div className="label mb-2">ORIGINAL REQUEST</div>
                 <div
-                  className="mb-4 text-[13.5px] text-ink-3"
+                  className="mb-4 text-[15px] text-ink-3"
                   style={{ lineHeight: 1.6 }}
                 >
                   {task.description ?? 'No description was submitted.'}
@@ -415,9 +465,9 @@ export default function Detail({
                   <div className="flex flex-col gap-1.5">
                     {task.acceptance_criteria.map((c) => (
                       <div key={c} className="flex items-baseline gap-2.5">
-                        <span className="text-[11px] text-muted-2">·</span>
+                        <span className="text-[12.5px] text-muted-2">·</span>
                         <span
-                          className="text-[12.5px] text-ink-3"
+                          className="text-[14px] text-ink-3"
                           style={{ lineHeight: 1.55 }}
                         >
                           {c}
@@ -426,7 +476,7 @@ export default function Detail({
                     ))}
                   </div>
                 ) : (
-                  <div className="text-[12.5px] text-muted">None submitted.</div>
+                  <div className="text-[14px] text-muted">None submitted.</div>
                 )}
               </div>
               <div>
@@ -445,7 +495,7 @@ export default function Detail({
                     2,
                   )
                     .split('\n')
-                    .map((text) => ({ text, color: '#9A9AA3' }))}
+                    .map((text) => ({ text, color: '#5B5D66' }))}
                 />
               </div>
             </div>
@@ -455,12 +505,12 @@ export default function Detail({
             <div className="p-[18px]">
               <SectionTitle
                 title="Event log"
-                right={<Pill c={['#212125', '#9A9AA3']}>APPEND-ONLY</Pill>}
+                right={<Pill c={['#F0ECE3', '#5B5D66']}>APPEND-ONLY</Pill>}
               />
               <div className="mt-3.5 flex flex-col">
                 {events.map((e, i) => (
                   <div key={e.id} className="flex gap-3">
-                    <div className="mono w-[62px] shrink-0 pt-px text-[10.5px] text-muted-2">
+                    <div className="mono w-[62px] shrink-0 pt-px text-[12px] text-muted-2">
                       {clock(e.created_at)}
                     </div>
                     <div className="flex flex-col items-center">
@@ -473,10 +523,10 @@ export default function Detail({
                       ) : null}
                     </div>
                     <div className="pb-3.5">
-                      <div className="mono text-[10.5px] text-ink-2">
+                      <div className="mono text-[12px] text-ink-2">
                         {e.event_type}
                       </div>
-                      <div className="text-[12px] text-muted">
+                      <div className="text-[13.5px] text-muted">
                         {e.message}
                         {e.actor ? (
                           <span className="text-muted-3"> · {e.actor}</span>
@@ -492,18 +542,50 @@ export default function Detail({
 
         {/* ---- right rail ---- */}
         <div className="flex flex-col gap-4">
+          <Rail title="WHERE IT IS">
+            {recent.length === 0 ? (
+              <div className="text-[13.5px] text-muted">
+                No event has been recorded yet.
+              </div>
+            ) : (
+              <ol className="flex flex-col">
+                {recent.map((e, i) => (
+                  <li key={e.id} className="flex gap-3">
+                    <div className="flex flex-col items-center">
+                      <span
+                        className={`mt-1 size-2.5 shrink-0 rounded-full ${i === 0 ? 'ring-4 ring-agent-tint' : ''}`}
+                        style={{ background: eventColour(e.event_type) }}
+                      />
+                      {i < recent.length - 1 ? (
+                        <span className="w-px flex-1 bg-line" />
+                      ) : null}
+                    </div>
+                    <div className="min-w-0 pb-3">
+                      <div className="text-[13.5px] font-medium text-ink-2">
+                        {statusLabel(e.event_type)}
+                      </div>
+                      <div className="mono text-[11.5px] text-muted-3">
+                        {clock(e.created_at)}
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </Rail>
+
           <Rail title="PROGRESS">
             <div className="mb-1.5 flex justify-between">
-              <span className="text-[11.5px] text-muted">
-                {task.status.replace(/_/g, ' ')}
+              <span className="text-[13px] text-muted">
+                {statusLabel(task.status)}
               </span>
-              <span className="mono text-[11px] text-ink-2">
+              <span className="mono text-[12.5px] text-ink-2">
                 {percent(task.progress_percent)}
               </span>
             </div>
-            <Bar pct={percent(task.progress_percent)} color="#7C9CF5" />
+            <Bar pct={percent(task.progress_percent)} color="#0B6BFF" />
             {task.error_code ? (
-              <div className="mono mt-3 text-[11px] text-danger">
+              <div className="mono mt-3 text-[12.5px] text-danger">
                 {task.error_code}
               </div>
             ) : null}
@@ -513,19 +595,19 @@ export default function Detail({
             <div className="flex flex-col gap-2.5">
               <div>
                 <ColLabel>BRANCH</ColLabel>
-                <div className="mono break-all text-[11px] text-ink-2">
+                <div className="mono break-all text-[12.5px] text-ink-2">
                   {task.branch_name ?? '—'}
                 </div>
               </div>
               <div>
                 <ColLabel>COMMIT</ColLabel>
-                <div className="mono break-all text-[11px] text-ink-2">
+                <div className="mono break-all text-[12.5px] text-ink-2">
                   {task.commit_sha ?? '—'}
                 </div>
               </div>
               <div>
                 <ColLabel>PULL REQUEST</ColLabel>
-                <div className="mono break-all text-[11px] text-accent">
+                <div className="mono break-all text-[12.5px] text-accent">
                   {task.pull_request_url ?? '—'}
                 </div>
               </div>
@@ -544,8 +626,8 @@ export default function Detail({
                   key={label}
                   className="flex items-baseline justify-between gap-3"
                 >
-                  <span className="text-[11.5px] text-muted">{label}</span>
-                  <span className="mono text-[11px] text-ink-2">{value}</span>
+                  <span className="text-[13px] text-muted">{label}</span>
+                  <span className="mono text-[12.5px] text-ink-2">{value}</span>
                 </div>
               ))}
             </div>
@@ -556,8 +638,8 @@ export default function Detail({
               <div className="flex flex-col gap-2">
                 {detail.approvals.map((a, i) => (
                   <div key={i} className="flex items-baseline justify-between gap-3">
-                    <span className="text-[11.5px] text-muted">{a.gate}</span>
-                    <span className="mono text-[11px] text-ink-2">
+                    <span className="text-[13px] text-muted">{a.gate}</span>
+                    <span className="mono text-[12.5px] text-ink-2">
                       {a.decision}
                       {a.decided_by_email ? ` · ${a.decided_by_email}` : ''}
                     </span>

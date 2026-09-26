@@ -42,10 +42,10 @@ function Field({
 }) {
   return (
     <label className="flex flex-col gap-1.5">
-      <span className="mono text-[11px] text-muted-2">{label}</span>
+      <span className="mono text-[12.5px] text-muted-2">{label}</span>
       {children}
       {hint ? (
-        <span className="text-[11px] text-muted-3" style={{ lineHeight: 1.5 }}>
+        <span className="text-[12.5px] text-muted-3" style={{ lineHeight: 1.5 }}>
           {hint}
         </span>
       ) : null}
@@ -247,8 +247,8 @@ export default function GithubForm({
 
       {error ? (
         <div
-          className="rounded-lg border px-3.5 py-2.5 text-[12.5px] text-danger"
-          style={{ borderColor: '#452020', background: '#1A0F0E', lineHeight: 1.5 }}
+          className="rounded-lg border px-3.5 py-2.5 text-[14px] text-danger"
+          style={{ borderColor: '#F0C9C4', background: '#F8E0DD', lineHeight: 1.5 }}
           role="alert"
         >
           {error}
