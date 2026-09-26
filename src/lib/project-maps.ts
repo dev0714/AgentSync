@@ -135,8 +135,6 @@ async function start(row: MapRow): Promise<void> {
       resources: { vcpus: 2 },
       timeout: RUN_LIMIT_MS + 5 * 60_000,
       tags: { app: 'agentsync', job: 'project-map' },
-      // A run is thrown away when it finishes: no snapshots kept (or billed).
-      persistent: false,
       ...credentials(),
     });
 
@@ -230,7 +228,9 @@ async function poll(row: MapRow): Promise<void> {
   try {
     sandbox = await Sandbox.get({ name: row.sandbox_name, ...credentials() });
   } catch (e) {
-    await setMap(row.project_id, { status: 'failed', error: `The sandbox is gone: ${(e as Error).message}`.slice(0, 1000), finished_at: new Date().toISOString() });
+    // A lookup can miss briefly; only give up once the run is overdue.
+    if (!overdue) return;
+    await setMap(row.project_id, { status: 'failed', error: `The map run's sandbox could not be found: ${(e as Error).message}`.slice(0, 1000), finished_at: new Date().toISOString() });
     return;
   }
   try {
@@ -245,7 +245,7 @@ async function poll(row: MapRow): Promise<void> {
   } catch (e) {
     await setMap(row.project_id, { status: 'failed', error: `Could not collect the map: ${(e as Error).message}`.slice(0, 1000), finished_at: new Date().toISOString() });
   }
-  // Gone for good, with any snapshot, so nothing is left behind to store.
+  // Deleted with its snapshots once collected, so a run leaves nothing stored (or billed).
   await sandbox.delete({ deleteOrphanSnapshots: true }).catch(() => sandbox.stop().catch(() => undefined));
 }
 
