@@ -10,6 +10,7 @@ import {
   rowsFrom,
   swatch,
 } from '@/lib/portal-ui';
+import ManagedAgentCard from '../ManagedAgentCard';
 import { TierModels } from '../tiers';
 import { Ago, CodeBlock, ColLabel, Empty, FieldRows, Pill, Tabs } from '../ui';
 
@@ -172,6 +173,8 @@ export default function Agents({
             </div>
           </div>
         </div>
+
+        {agent.key === 'engineer' ? <ManagedAgentCard tenantSlug={tenantSlug} /> : null}
 
         <div className="card-head">
           <Tabs

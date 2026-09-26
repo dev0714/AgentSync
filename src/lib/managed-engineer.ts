@@ -48,15 +48,29 @@ function credentialKey(ctx: AiContext): string {
 }
 
 /** The stored agent and environment for this credential, created or updated as needed. */
-async function ensureSetup(client: Anthropic, ctx: AiContext, engineer: AgentDefinition, projectName: string) {
-  const system = `${(engineer.system_prompt ?? 'You are the Engineer.').replace(/\{\{\s*project\.name\s*\}\}/g, projectName)}\n\n${SANDBOX_RULES}`;
+/**
+ * The agent's saved prompt is the same for every project — the project name
+ * goes in each session's instructions instead — so switching projects never
+ * publishes a new agent version.
+ */
+function agentSystem(engineer: Pick<AgentDefinition, 'system_prompt'>): string {
+  const base = (engineer.system_prompt ?? 'You are the Engineer.').replace(/\{\{\s*project\.name\s*\}\}/g, 'this project');
+  return `${base}\n\n${SANDBOX_RULES}`;
+}
+
+async function ensureSetup(
+  client: Anthropic,
+  ctx: AiContext,
+  engineer: Pick<AgentDefinition, 'system_prompt'>,
+): Promise<{ setup: Setup; system: string; action: 'unchanged' | 'created' | 'updated' }> {
+  const system = agentSystem(engineer);
   const hash = createHash('sha256').update(system).digest('hex');
   const key = credentialKey(ctx);
 
   const { data } = await serviceClient().rpc('agentsync_managed_setup_get', { p_credential_key: key });
   const stored = data as Setup | null;
 
-  if (stored && stored.prompt_hash === hash) return { setup: stored, system };
+  if (stored && stored.prompt_hash === hash) return { setup: stored, system, action: 'unchanged' };
 
   let agentId = stored?.agent_id;
   let version = stored?.agent_version;
@@ -70,6 +84,7 @@ async function ensureSetup(client: Anthropic, ctx: AiContext, engineer: AgentDef
     environmentId = env.id;
   }
 
+  const created = !agentId;
   if (!agentId) {
     const agent = await client.beta.agents.create({
       name: 'AgentSync Engineer',
@@ -94,7 +109,23 @@ async function ensureSetup(client: Anthropic, ctx: AiContext, engineer: AgentDef
     p_environment_id: setup.environment_id,
     p_prompt_hash: setup.prompt_hash,
   });
-  return { setup, system };
+  return { setup, system, action: created ? 'created' : 'updated' };
+}
+
+/**
+ * Creates the Engineer in Claude, or publishes a new version if its prompt
+ * changed — the "Create in Claude" / "Sync to Claude" button. Idempotent: when
+ * nothing changed, nothing is sent.
+ */
+export async function syncEngineerAgent(credentialKeyRef: string, engineer: Pick<AgentDefinition, 'system_prompt'>) {
+  const ctx: AiContext = {
+    taskId: '',
+    credential: credentialKeyRef.startsWith('env:ANTHROPIC_API_KEY') ? null : { key_reference: credentialKeyRef },
+    monthlyBudget: null,
+    monthSpend: 0,
+  };
+  const client = await clientFor(ctx);
+  return ensureSetup(client, ctx, engineer);
 }
 
 /** Dollar cap per session by tier, in cents. A session at its cap pauses. */
@@ -111,7 +142,7 @@ export async function startEngineerSession(params: {
   title: string;
 }): Promise<{ sessionId: string; resourceId: string | null; model: string }> {
   const client = await clientFor(params.ctx);
-  const { setup } = await ensureSetup(client, params.ctx, params.engineer, params.projectName);
+  const { setup } = await ensureSetup(client, params.ctx, params.engineer);
   const model = params.engineer.model || 'claude-opus-5-5';
   const tier = params.engineer.tier ?? 'medium';
 
@@ -139,7 +170,7 @@ export async function startEngineerSession(params: {
       type: 'limit',
       max_list_cost: { amount: String(BUDGET_CENTS[tier] ?? 800), currency: 'USD' },
     },
-    initial_events: [{ type: 'user.message', content: [{ type: 'text', text: params.prompt }] }],
+    initial_events: [{ type: 'user.message', content: [{ type: 'text', text: `Project: ${params.projectName}\n\n${params.prompt}` }] }],
   });
 
   const repo = (session.resources ?? []).find((r) => r.type === 'github_repository') as { id?: string } | undefined;
