@@ -1,30 +1,39 @@
 import type { Metadata } from 'next';
-import { IBM_Plex_Mono, IBM_Plex_Sans } from 'next/font/google';
+import { Bricolage_Grotesque, Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
 
-const plexSans = IBM_Plex_Sans({
+// Display face for headings, a quiet sans for reading, a mono for code and
+// identifiers. Three faces, each with one job.
+const display = Bricolage_Grotesque({
   subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
-  variable: '--font-plex-sans',
+  weight: ['500', '600', '700', '800'],
+  variable: '--font-display-face',
 });
 
-const plexMono = IBM_Plex_Mono({
+const sans = Geist({
   subsets: ['latin'],
-  weight: ['400', '500', '600'],
-  variable: '--font-plex-mono',
+  variable: '--font-sans-face',
+});
+
+const mono = Geist_Mono({
+  subsets: ['latin'],
+  variable: '--font-mono-face',
 });
 
 export const metadata: Metadata = {
-  title: 'AgentSync · A LeadSync platform',
+  title: 'AgentSync — requests in, reviewed pull requests out',
   description:
-    'A development agent any system can call, and your reviewers still control. Multi-tenant, human-gated, audited end to end.',
+    'A development agent any system can call. It plans, builds and checks the change on an isolated branch — and nothing merges or deploys until the people you choose approve it.',
 };
 
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${plexSans.variable} ${plexMono.variable}`}>
+    <html
+      lang="en"
+      className={`${display.variable} ${sans.variable} ${mono.variable}`}
+    >
       <body>{children}</body>
     </html>
   );

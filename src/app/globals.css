@@ -1,41 +1,69 @@
 @import 'tailwindcss';
 
 /*
- * AgentSync design tokens.
- * Single dark theme — the control plane and the marketing site share one palette.
+ * AgentSync design tokens — "Paper & Signal".
+ *
+ * A warm paper ground, near-black ink, and two colours that carry meaning
+ * rather than decoration:
+ *   agent (blue)  — the agent is working
+ *   gate (orange) — a person decides
+ * Keep that mapping everywhere. A reader should be able to find every point
+ * that is waiting on a human by colour alone.
+ *
+ * Token names predate the redesign and are kept so existing utilities
+ * (bg-card, text-ink, border-line …) follow the new palette without edits.
  */
 @theme {
-  --color-canvas: #0a0a0b;
-  --color-canvas-alt: #0c0c0e;
-  --color-surface: #0e0e10;
-  --color-card: #141416;
-  --color-raised: #1a1a1d;
-  --color-line: #242428;
-  --color-line-soft: #1c1c20;
-  --color-line-faint: #1f1f23;
+  --color-canvas: #f3f0e8;
+  --color-canvas-alt: #ece8dd;
+  --color-surface: #f6f4ef;
+  --color-card: #ffffff;
+  --color-raised: #f9f8f4;
+  --color-line: #dad5c8;
+  --color-line-soft: #e4e0d6;
+  --color-line-faint: #f0ece3;
 
-  --color-ink: #f2f2f4;
-  --color-ink-2: #e6e6ea;
-  --color-ink-3: #c6c6cd;
-  --color-muted: #9a9aa3;
-  --color-muted-2: #71717b;
-  --color-muted-3: #6a6a73;
-  --color-muted-4: #55555d;
+  --color-ink: #15161a;
+  --color-ink-2: #2b2d33;
+  --color-ink-3: #3a3c44;
+  --color-muted: #4f515a;
+  --color-muted-2: #5b5d66;
+  --color-muted-3: #5f616a;
+  --color-muted-4: #676972;
 
-  --color-accent: #7c9cf5;
-  --color-accent-hover: #93aeff;
-  --color-ok: #6fd69c;
-  --color-ok-bright: #4ade80;
-  --color-warn: #f5a623;
-  --color-warn-2: #f0b45e;
-  --color-danger: #f08a80;
-  --color-danger-2: #f0654a;
-  --color-info: #7fb6e0;
+  /* Brand blue, from the AgentSync logo. Fills and large type use it
+     directly; small text uses agent-ink, which clears 4.5:1 on paper. */
+  --color-accent: #0b6bff;
+  --color-accent-hover: #0550c4;
+  --color-agent-ink: #0550c4;
+  --color-agent-tint: #e1ecff;
 
-  --font-sans: var(--font-plex-sans), system-ui, sans-serif;
-  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+  --color-gate: #c2410c;
+  --color-gate-ink: #963510;
+  --color-gate-tint: #fbe7da;
+
+  --color-ok: #1f7a4d;
+  --color-ok-bright: #1f7a4d;
+  --color-ok-ink: #17603c;
+  --color-ok-tint: #ddefe3;
+  --color-warn: #c2410c;
+  --color-warn-2: #963510;
+  --color-danger: #b42318;
+  --color-danger-2: #b42318;
+  --color-danger-ink: #962017;
+  --color-danger-tint: #f8e0dd;
+  --color-info: #0b6bff;
+
+  --color-night: #15161a;
+  --color-night-2: #1f2026;
+  --color-night-line: #2c2e35;
+
+  --font-display: var(--font-display-face), 'Geist', system-ui, sans-serif;
+  --font-sans: var(--font-sans-face), system-ui, sans-serif;
+  --font-mono: var(--font-mono-face), ui-monospace, monospace;
 }
 
+@layer base {
 html,
 body {
   margin: 0;
@@ -60,21 +88,11 @@ a {
 
 a:hover {
   color: var(--color-accent-hover);
-  text-decoration: underline;
 }
 
-@keyframes agsPulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.25;
-  }
-}
-
-.ags-pulse {
-  animation: agsPulse 2s infinite;
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
 }
 
 ::-webkit-scrollbar {
@@ -83,111 +101,375 @@ a:hover {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #2e2e33;
+  background: #cfc9bb;
   border-radius: 6px;
   border: 3px solid var(--color-canvas);
 }
+}
 
+@layer components {
 /* ---- shared primitives ---------------------------------------------- */
+
+/* One headline line; the motion block below adds the rising mask. */
+.line {
+  display: block;
+}
+
+.display {
+  font-family: var(--font-display);
+  letter-spacing: -0.03em;
+}
 
 .mono {
   font-family: var(--font-mono);
 }
 
-/* Small upper-case monospace label used for every column head and section eyebrow. */
+/* Column heads and section eyebrows. Readable size, not a whisper. */
 .label {
-  font-family: var(--font-mono);
-  font-size: 9.5px;
-  letter-spacing: 0.07em;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--color-muted-2);
 }
 
 .card {
   background: var(--color-card);
-  border: 1px solid var(--color-line);
-  border-radius: 9px;
+  border: 1px solid var(--color-line-soft);
+  border-radius: 18px;
 }
 
 /* Header strip inside a card — tables, tab bars, group headers. */
 .card-head {
-  background: var(--color-raised);
-  border-bottom: 1px solid var(--color-line);
+  background: var(--color-card);
+  border-bottom: 1px solid var(--color-line-soft);
 }
 
 .pill {
-  display: inline-block;
-  padding: 3px 9px;
-  border-radius: 5px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
   line-height: 1.35;
 }
 
+.btn,
+.btn-primary,
+.btn-danger,
+.btn-gate {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 12px;
+  font-size: 14.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    background-color 0.2s ease,
+    border-color 0.2s ease;
+}
+
 .btn {
-  padding: 8px 14px;
   border: 1px solid var(--color-line);
-  border-radius: 7px;
   background: var(--color-card);
   color: var(--color-ink);
-  font-size: 12.5px;
-  font-weight: 500;
-  cursor: pointer;
 }
 
 .btn:hover {
-  border-color: #3a3a40;
+  border-color: var(--color-ink-3);
 }
 
 .btn-primary {
-  padding: 8px 16px;
   border: 0;
-  border-radius: 7px;
   background: var(--color-ink);
   color: var(--color-canvas);
-  font-size: 12.5px;
-  font-weight: 600;
-  cursor: pointer;
 }
 
 .btn-primary:hover {
-  background: #ffffff;
+  background: #000000;
+}
+
+.btn-gate {
+  border: 0;
+  background: var(--color-gate);
+  color: #ffffff;
+}
+
+.btn-gate:hover {
+  background: var(--color-gate-ink);
 }
 
 .btn-danger {
-  padding: 8px 14px;
-  border: 1px solid #452020;
-  border-radius: 7px;
-  background: #2a1512;
-  color: var(--color-danger);
-  font-size: 12.5px;
-  font-weight: 500;
-  cursor: pointer;
+  border: 1px solid #e7b8b2;
+  background: var(--color-card);
+  color: var(--color-danger-ink);
 }
 
 .btn-danger:hover {
-  background: #331a16;
+  background: var(--color-danger-tint);
+}
+
+.btn:disabled,
+.btn-primary:disabled,
+.btn-gate:disabled,
+.btn-danger:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.row-hover {
+  transition: background-color 0.15s ease;
 }
 
 .row-hover:hover {
-  background: #1c1c20;
+  background: var(--color-raised);
 }
 
-/* Config fields — every editable row in the portal renders as one of these. */
+/* Form fields — every editable row in the portal renders as one of these. */
 .field-input,
 .field-select {
   width: 100%;
-  padding: 7px 10px;
-  border: 1px solid var(--color-line);
-  border-radius: 6px;
-  background: var(--color-surface);
-  color: inherit;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
+  min-height: 42px;
+  padding: 9px 12px;
+  border: 1px solid #cfc9bb;
+  border-radius: 10px;
+  background: var(--color-card);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
   outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .field-input:focus,
 .field-select:focus {
   border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-agent-tint);
+}
+}
+
+/* ---- motion ---------------------------------------------------------
+ *
+ * Everything below only runs for viewers who have not asked their system
+ * to reduce motion. Scroll reveals are gated twice: an element is hidden
+ * only under [data-anim], which the Reveal component sets once it knows an
+ * IntersectionObserver exists to bring the element back. Without JS, or
+ * with reduced motion, every element is simply visible.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  [data-anim] .rv {
+    transition:
+      opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1) var(--d, 0ms),
+      transform 0.9s cubic-bezier(0.16, 1, 0.3, 1) var(--d, 0ms);
+  }
+  [data-anim] .rv:not([data-in]) {
+    opacity: 0;
+    transform: translateY(36px);
+  }
+  [data-anim] .rv.from-left:not([data-in]) {
+    transform: translateX(-32px);
+  }
+  [data-anim] .rv.pop:not([data-in]) {
+    transform: scale(0.7);
+  }
+
+  .line {
+    display: block;
+    overflow: hidden;
+    padding-bottom: 0.08em;
+    margin-bottom: -0.08em;
+  }
+  .rise {
+    display: inline-block;
+    animation: ags-rise 1.15s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: var(--d, 0ms);
+  }
+  .fade-up {
+    animation: ags-fade-up 1s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: var(--d, 0ms);
+  }
+  .pulse-ring {
+    animation: ags-pulse-ring 2.4s cubic-bezier(0.2, 0.6, 0.3, 1) infinite;
+  }
+  .blink,
+  .ags-pulse {
+    animation: ags-blink 1.6s ease-in-out infinite;
+  }
+  .work {
+    animation: ags-work 3s ease-in-out infinite;
+    animation-delay: var(--d, 0ms);
+  }
+  .travel {
+    animation: ags-travel 5.2s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+  }
+  .marquee {
+    animation: ags-marquee 42s linear infinite;
+  }
+
+  [data-anim] .rv .draw {
+    transform-origin: left center;
+    transition: transform 2s cubic-bezier(0.65, 0, 0.35, 1) 0.35s;
+  }
+  [data-anim] .rv:not([data-in]) .draw {
+    transform: scaleX(0);
+  }
+  [data-anim] .rv .knob {
+    transition: transform 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) var(--d, 0ms);
+  }
+  [data-anim] .rv:not([data-in]) .knob {
+    transform: translateX(-18px);
+  }
+  [data-anim] .rv .sw {
+    transition: background-color 0.45s ease var(--d, 0ms);
+  }
+  [data-anim] .rv:not([data-in]) .sw {
+    background-color: #c9c4b7 !important;
+  }
+  [data-anim] .rv .chip {
+    transition:
+      opacity 0.5s ease var(--d, 0ms),
+      transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) var(--d, 0ms);
+  }
+  [data-anim] .rv:not([data-in]) .chip {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+
+  .lift {
+    transition:
+      transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+      box-shadow 0.3s ease,
+      opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1) var(--d, 0ms);
+  }
+  .lift:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 22px 44px -22px rgba(21, 22, 26, 0.4);
+  }
+  .btn-lift {
+    transition:
+      transform 0.2s ease,
+      box-shadow 0.2s ease;
+  }
+  .btn-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 26px -12px rgba(21, 22, 26, 0.55);
+  }
+  .nudge {
+    transition: transform 0.2s ease;
+  }
+  .btn-lift:hover .nudge {
+    transform: translateX(4px);
+  }
+}
+
+@keyframes ags-rise {
+  from {
+    transform: translateY(110%);
+  }
+  to {
+    transform: none;
+  }
+}
+@keyframes ags-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes ags-pulse-ring {
+  0% {
+    transform: scale(0.78);
+    opacity: 0.9;
+  }
+  80%,
+  100% {
+    transform: scale(1.4);
+    opacity: 0;
+  }
+}
+@keyframes ags-blink {
+  50% {
+    opacity: 0.25;
+  }
+}
+@keyframes ags-work {
+  0%,
+  100% {
+    opacity: 0.3;
+    transform: scale(0.8);
+  }
+  12% {
+    opacity: 1;
+    transform: scale(1.35);
+  }
+  30% {
+    opacity: 0.3;
+    transform: scale(0.8);
+  }
+}
+@keyframes ags-travel {
+  0% {
+    left: 0;
+    opacity: 0;
+  }
+  6% {
+    opacity: 1;
+  }
+  72% {
+    left: 83.333%;
+    opacity: 1;
+  }
+  90% {
+    left: 83.333%;
+    opacity: 1;
+  }
+  100% {
+    left: 83.333%;
+    opacity: 0;
+  }
+}
+@keyframes ags-marquee {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+/* A thin line along the bottom of the sticky nav that fills as the page
+ * scrolls, where the browser supports scroll-driven animation. Elsewhere it
+ * stays at zero width and is simply not there. */
+.scroll-progress {
+  transform: scaleX(0);
+  transform-origin: left center;
+}
+@supports (animation-timeline: scroll()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .scroll-progress {
+      animation: ags-grow linear both;
+      animation-timeline: scroll(root);
+    }
+  }
+}
+@keyframes ags-grow {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
 }
