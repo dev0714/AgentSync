@@ -1,4 +1,5 @@
 import 'server-only';
+import type { Candidate } from './routing';
 import { serviceClient } from './supabase';
 
 /**
@@ -55,6 +56,8 @@ export type SubmitError =
   | 'PROJECT_DISABLED'
   | 'PROJECT_NOT_FOUND'
   | 'CLIENT_NOT_MAPPED'
+  | 'ROUTING_REQUIRED'
+  | 'PROJECT_NOT_MAPPED_TO_CLIENT'
   | 'VALIDATION_FAILED'
   | 'INTERNAL_ERROR';
 
@@ -66,8 +69,10 @@ export type SubmitResult =
       status: string;
       /** false when an existing task was returned for a repeated idempotency key */
       created: boolean;
+      project_id?: string;
+      project_name?: string;
     }
-  | { ok: false; error: SubmitError; detail?: string };
+  | { ok: false; error: SubmitError; detail?: string; candidates?: Candidate[] };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -186,6 +191,12 @@ export async function submitTask(
 
   const result = data as Record<string, unknown>;
   if (result?.ok === false) {
+    if (result.error === 'ROUTING_REQUIRED') {
+      return { ok: false, error: 'ROUTING_REQUIRED', candidates: (result.candidates as Candidate[]) ?? [] };
+    }
+    if (result.error === 'PROJECT_NOT_MAPPED_TO_CLIENT') {
+      return { ok: false, error: 'PROJECT_NOT_MAPPED_TO_CLIENT', detail: 'That repository is not one this client is mapped to.' };
+    }
     if (result.error === 'CLIENT_NOT_MAPPED') {
       return {
         ok: false,
@@ -201,6 +212,8 @@ export async function submitTask(
     correlation_id: result.correlation_id as string,
     status: result.status as string,
     created: result.created as boolean,
+    project_id: result.project_id as string | undefined,
+    project_name: result.project_name as string | undefined,
   };
 }
 

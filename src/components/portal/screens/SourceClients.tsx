@@ -4,16 +4,18 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Ago, CopyBlock } from '../ui';
 
 /**
- * A source system's clients, each mapped to the repository its requests are
+ * A source system's clients, each mapped to the repositories its requests are
  * built in. A service desk sends the client with every ticket; AgentSync
- * routes the task to the mapped project, and refuses it (CLIENT_NOT_MAPPED)
- * until a person picks one here.
+ * routes it to the client's repository — when there are several, a small
+ * model picks one using each mapping's hint — and refuses it
+ * (CLIENT_NOT_MAPPED) until a person maps at least one here.
  */
 
+type Mapping = { project_id: string; hint: string | null };
 type Client = {
   external_id: string;
   name: string;
-  project_id: string | null;
+  projects: Mapping[];
   active: boolean;
   last_seen_at: string;
   task_count: number;
@@ -56,24 +58,29 @@ export default function SourceClients({ sourceId, sourceName, tenantSlug }: {
     void load();
   }, [load]);
 
-  async function map(client: Client, projectId: string) {
+  // Saves a client's whole repository list (with hints); an empty list unmaps it.
+  async function save(client: Client, projects: Mapping[]) {
     setSaving(client.external_id);
     setProblem(null);
+    const before = client.projects;
+    setData((d) => d && {
+      ...d,
+      clients: d.clients.map((c) => (c.external_id === client.external_id ? { ...c, projects } : c)),
+    });
     try {
       const res = await fetch(`/api/portal/sources/${sourceId}/clients`, {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ tenant_slug: tenantSlug, external_id: client.external_id, project_id: projectId || null }),
+        body: JSON.stringify({ tenant_slug: tenantSlug, external_id: client.external_id, projects }),
       });
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
         setProblem(ERRORS[body.error ?? ''] ?? `Could not save (${body.error ?? res.status}).`);
-        return;
+        setData((d) => d && {
+          ...d,
+          clients: d.clients.map((c) => (c.external_id === client.external_id ? { ...c, projects: before } : c)),
+        });
       }
-      setData((d) => d && {
-        ...d,
-        clients: d.clients.map((c) => (c.external_id === client.external_id ? { ...c, project_id: projectId || null } : c)),
-      });
     } finally {
       setSaving(null);
     }
@@ -104,10 +111,14 @@ export default function SourceClients({ sourceId, sourceName, tenantSlug }: {
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
     return (data?.clients ?? []).filter((c) =>
-      (!onlyUnmapped || !c.project_id) && (!q || c.name.toLowerCase().includes(q) || c.external_id.toLowerCase().includes(q)));
+      (!onlyUnmapped || c.projects.length === 0) && (!q || c.name.toLowerCase().includes(q) || c.external_id.toLowerCase().includes(q)));
   }, [data, query, onlyUnmapped]);
 
-  const unmapped = (data?.clients ?? []).filter((c) => !c.project_id && c.active).length;
+  const unmapped = (data?.clients ?? []).filter((c) => c.projects.length === 0 && c.active).length;
+  const projectName = (id: string) => {
+    const p = data?.projects.find((x) => x.id === id);
+    return p ? (p.enabled ? p.name : `${p.name} (disabled)`) : 'Unknown project';
+  };
 
   return (
     <div className="card flex flex-col gap-4 p-5">
@@ -115,8 +126,10 @@ export default function SourceClients({ sourceId, sourceName, tenantSlug }: {
         <div>
           <div className="text-[16px] font-semibold text-ink">{sourceName} · clients</div>
           <div className="mt-1 max-w-[70ch] text-[14px] text-muted" style={{ lineHeight: 1.6 }}>
-            Pick the repository each client&apos;s requests are built in. {sourceName} sends the client with
-            every ticket; tickets from an unmapped client are held back until you map it.
+            Pick the repositories each client&apos;s requests are built in. {sourceName} sends the client with
+            every ticket. With more than one repository, AgentSync reads the ticket and picks the right one, using
+            the note you give each; when it can&apos;t tell, a person chooses on the ticket. Tickets from an
+            unmapped client are held back until you map it.
           </div>
         </div>
         <button className="btn" onClick={rotate} disabled={rotating || !tenantSlug}>
@@ -129,8 +142,8 @@ export default function SourceClients({ sourceId, sourceName, tenantSlug }: {
           <div className="text-[14px] font-semibold text-gate-ink">Copy this callback secret now. It will not be shown again.</div>
           <CopyBlock text={secret} />
           <div className="text-[13px] text-muted-2">
-            Set it as <code>AGENTSYNC_CALLBACK_SECRET</code> on {sourceName}. Every update AgentSync posts back carries
-            <code> x-agentsync-signature: sha256=…</code>, an HMAC of the body made with this secret.
+            Give it to {sourceName} (a one-click connection does this for you). Every update AgentSync posts back
+            carries <code> x-agentsync-signature: sha256=…</code>, an HMAC of the body made with this secret.
           </div>
         </div>
       ) : null}
@@ -163,35 +176,70 @@ export default function SourceClients({ sourceId, sourceName, tenantSlug }: {
           </div>
 
           <div className="overflow-x-auto rounded-md border border-line">
-            <div className="grid min-w-[720px] grid-cols-[minmax(220px,1fr)_minmax(240px,320px)_90px_110px] items-center gap-3 border-b border-line bg-raised px-3.5 py-[9px]">
+            <div className="grid min-w-[860px] grid-cols-[minmax(200px,1fr)_minmax(400px,520px)_70px_100px] items-start gap-3 border-b border-line bg-raised px-3.5 py-[9px]">
               <span className="label">CLIENT</span>
-              <span className="label">REPOSITORY</span>
+              <span className="label">REPOSITORIES · WHAT EACH IS FOR</span>
               <span className="label">TASKS</span>
               <span className="label">LAST SEEN</span>
             </div>
             {shown.map((c) => (
               <div
                 key={c.external_id}
-                className="grid min-w-[720px] grid-cols-[minmax(220px,1fr)_minmax(240px,320px)_90px_110px] items-center gap-3 border-b border-line-faint px-3.5 py-[9px]"
+                className="grid min-w-[860px] grid-cols-[minmax(200px,1fr)_minmax(400px,520px)_70px_100px] items-start gap-3 border-b border-line-faint px-3.5 py-[9px]"
               >
-                <div className="min-w-0">
+                <div className="min-w-0 pt-1.5">
                   <div className={`truncate text-[14.5px] font-medium ${c.active ? '' : 'text-muted'}`}>{c.name}</div>
                   <div className="mono truncate text-[11.5px] text-muted-2">{c.active ? c.external_id : `${c.external_id} · inactive`}</div>
                 </div>
-                <select
-                  className="field-input"
-                  value={c.project_id ?? ''}
-                  disabled={saving === c.external_id}
-                  onChange={(e) => void map(c, e.target.value)}
-                  aria-label={`Repository for ${c.name}`}
-                >
-                  <option value="">Not mapped</option>
-                  {data.projects.map((p) => (
-                    <option key={p.id} value={p.id}>{p.enabled ? p.name : `${p.name} (disabled)`}</option>
+                <div className="flex flex-col gap-1.5">
+                  {c.projects.map((m) => (
+                    <div key={m.project_id} className="flex items-center gap-2">
+                      <span className="w-[150px] shrink-0 truncate text-[13.5px] font-medium" title={projectName(m.project_id)}>
+                        {projectName(m.project_id)}
+                      </span>
+                      <input
+                        className="field-input min-h-[38px] flex-1 text-[13px]"
+                        placeholder={c.projects.length > 1 ? 'What is it for? e.g. public website' : 'Note (used when there are several)'}
+                        defaultValue={m.hint ?? ''}
+                        maxLength={300}
+                        disabled={saving === c.external_id}
+                        aria-label={`What ${projectName(m.project_id)} is for`}
+                        onBlur={(e) => {
+                          const hint = e.target.value.trim() || null;
+                          if (hint === (m.hint ?? null)) return;
+                          void save(c, c.projects.map((x) => (x.project_id === m.project_id ? { ...x, hint } : x)));
+                        }}
+                      />
+                      <button
+                        className="flex size-[34px] shrink-0 items-center justify-center rounded-md text-muted hover:bg-raised hover:text-danger-ink"
+                        disabled={saving === c.external_id}
+                        onClick={() => void save(c, c.projects.filter((x) => x.project_id !== m.project_id))}
+                        aria-label={`Remove ${projectName(m.project_id)} from ${c.name}`}
+                        title="Remove"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true"><path d="M3 3l8 8M11 3l-8 8" /></svg>
+                      </button>
+                    </div>
                   ))}
-                </select>
-                <span className="mono text-[12px] text-muted">{c.task_count}</span>
-                <span className="mono text-[12px] text-muted-2"><Ago iso={c.last_seen_at} /></span>
+                  <select
+                    className="field-input min-h-[38px] text-[13px]"
+                    value=""
+                    disabled={saving === c.external_id}
+                    onChange={(e) => {
+                      if (e.target.value) void save(c, [...c.projects, { project_id: e.target.value, hint: null }]);
+                    }}
+                    aria-label={`Add a repository for ${c.name}`}
+                  >
+                    <option value="">{c.projects.length ? '+ Add another repository' : 'Not mapped · choose a repository'}</option>
+                    {data.projects
+                      .filter((p) => !c.projects.some((m) => m.project_id === p.id))
+                      .map((p) => (
+                        <option key={p.id} value={p.id}>{p.enabled ? p.name : `${p.name} (disabled)`}</option>
+                      ))}
+                  </select>
+                </div>
+                <span className="mono pt-2.5 text-[12px] text-muted">{c.task_count}</span>
+                <span className="mono pt-2.5 text-[12px] text-muted-2"><Ago iso={c.last_seen_at} /></span>
               </div>
             ))}
             {shown.length === 0 ? <div className="px-3.5 py-3 text-[14px] text-muted">No clients match.</div> : null}

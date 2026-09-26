@@ -5,7 +5,8 @@ import { serviceClient } from '@/lib/supabase';
 /**
  * GET /api/portal/sources/:id/clients?tenant=slug — the source's clients and
  * the projects they can be mapped to.
- * PUT { tenant_slug, external_id, project_id | null } — map (or unmap) one.
+ * PUT { tenant_slug, external_id, projects: [{ project_id, hint? }] } — set a
+ * client's repositories (an empty list unmaps it).
  */
 
 const STATUS: Record<string, number> = { NOT_AUTHORISED: 403, PROJECT_NOT_FOUND: 404, CLIENT_NOT_FOUND: 404 };
@@ -40,14 +41,19 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   } catch {
     return NextResponse.json({ error: 'BAD_JSON' }, { status: 400 });
   }
-  const project = typeof b.project_id === 'string' && b.project_id ? b.project_id : null;
+  // [{ project_id, hint? }]: the client's repositories, replacing what it had.
+  const projects = Array.isArray(b.projects)
+    ? (b.projects as Record<string, unknown>[])
+        .filter((p) => p && typeof p.project_id === 'string' && p.project_id)
+        .map((p) => ({ project_id: String(p.project_id), hint: typeof p.hint === 'string' ? p.hint.slice(0, 300) : null }))
+    : [];
 
-  const { data, error } = await serviceClient().rpc('agentsync_portal_map_source_client', {
+  const { data, error } = await serviceClient().rpc('agentsync_portal_set_client_projects', {
     p_user_id: user.id,
     p_tenant_slug: String(b.tenant_slug ?? ''),
     p_source_id: id,
     p_external_id: String(b.external_id ?? ''),
-    p_project_id: project,
+    p_projects: projects,
   });
   if (error) {
     console.error('map source client failed', error);

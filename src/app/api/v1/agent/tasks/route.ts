@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { storeIncoming, validateIncoming } from '@/lib/attachments';
 import { kickWorker } from '@/lib/kick';
+import { routeTicket } from '@/lib/routing';
+import { logEvent } from '@/lib/stages';
 import { serviceClient } from '@/lib/supabase';
 import { submitTask, validateSubmission, type SubmitRequest } from '@/lib/tasks';
 
@@ -30,6 +32,8 @@ const STATUS: Record<string, number> = {
   PROJECT_NOT_FOUND: 404,
   PROJECT_DISABLED: 409,
   CLIENT_NOT_MAPPED: 409,
+  REPOSITORY_CHOICE_REQUIRED: 409,
+  PROJECT_NOT_MAPPED_TO_CLIENT: 422,
   RATE_LIMITED: 429,
   VALIDATION_FAILED: 422,
   INTERNAL_ERROR: 500,
@@ -97,6 +101,35 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // The client has several repositories: the router picks one, or a person must.
+  let routed: { reason: string; model: string } | null = null;
+  if (!result.ok && result.error === 'ROUTING_REQUIRED') {
+    const b = body as SubmitRequest;
+    const candidates = result.candidates ?? [];
+    const choice = await routeTicket(apiKey, { title: b.title, description: b.description }, candidates);
+    if (!choice.chosen) {
+      return NextResponse.json(
+        {
+          error: 'REPOSITORY_CHOICE_REQUIRED',
+          message: `Choose the repository for this ticket: ${choice.reason}`,
+          reason: choice.reason,
+          candidates: candidates.map((c) => ({ project_id: c.project_id, name: c.name, repository: c.repository })),
+        },
+        { status: 409 },
+      );
+    }
+    routed = { reason: choice.reason, model: choice.model };
+    try {
+      result = await submitTask(apiKey, clientIp(request), { ...b, project_id: choice.chosen });
+    } catch (error) {
+      console.error('task submission failed', error);
+      return NextResponse.json(
+        { error: 'INTERNAL_ERROR', message: 'Submission is unavailable. Retry with the same idempotency key.' },
+        { status: 500 },
+      );
+    }
+  }
+
   if (!result.ok) {
     return NextResponse.json(
       { error: result.error, message: result.detail ?? undefined },
@@ -113,6 +146,11 @@ export async function POST(request: NextRequest) {
   if (result.created && incoming.items.length) {
     attachmentProblems = await storeIncoming(result.task_id, incoming.items);
   }
+  if (result.created && routed) {
+    await logEvent(result.task_id, 'task.routed', `Routed to ${result.project_name ?? 'repository'}: ${routed.reason}`, {
+      model: routed.model,
+    }).catch(() => undefined);
+  }
   if (result.created) kickWorker('submit');
 
   // 202 for new work, 200 when an existing task was returned for a repeated key
@@ -122,6 +160,9 @@ export async function POST(request: NextRequest) {
       correlation_id: result.correlation_id,
       status: result.status,
       duplicate: !result.created,
+      project_id: result.project_id,
+      project_name: result.project_name,
+      ...(routed ? { routing: routed.reason } : {}),
       ...(attachmentProblems.length ? { attachment_problems: attachmentProblems } : {}),
     },
     { status: result.created ? 202 : 200 },

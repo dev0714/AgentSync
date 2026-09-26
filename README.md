@@ -205,7 +205,16 @@ client is mapped to (Source systems → **Map clients**):
 ```
 
 An unmapped client is recorded so it appears in the mapping table, and the task
-is refused with `CLIENT_NOT_MAPPED` (409) until someone maps it. A source can
+is refused with `CLIENT_NOT_MAPPED` (409) until someone maps it.
+
+A client can be mapped to several repositories, each with a short note on what
+it is for. A ticket still goes to exactly one: with a single mapping it goes
+straight there; with several, a small model reads the ticket against each
+repository's name, note and recent task titles and picks one (logged on the
+task as `task.routed`). When it isn't confident the answer is
+`REPOSITORY_CHOICE_REQUIRED` (409) with the `candidates`; the source asks a
+person and sends the ticket again with the chosen `project_id`, which must be
+one of that client's repositories (`PROJECT_NOT_MAPPED_TO_CLIENT` otherwise). A source can
 also report its whole client list up front, so clients can be mapped before
 their first ticket:
 
