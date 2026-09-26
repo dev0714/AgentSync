@@ -21,7 +21,7 @@ export type Installation = {
 
 export type Repo = { owner: string; repo: string; defaultBranch: string };
 
-export function githubFor(install: Installation | null, repo: Repo): Octokit {
+export async function githubFor(install: Installation | null, repo: Repo): Promise<Octokit> {
   if (!install) throw new Error('no GitHub App is connected for this tenant');
   if (!install.app_id) throw new Error('the GitHub connection has no app id');
 
@@ -35,7 +35,7 @@ export function githubFor(install: Installation | null, repo: Repo): Octokit {
     authStrategy: createAppAuth,
     auth: {
       appId: install.app_id,
-      privateKey: resolveSecret(install.private_key_reference),
+      privateKey: await resolveSecret(install.private_key_reference),
       installationId: install.installation_id,
     },
     userAgent: 'agentsync',

@@ -73,7 +73,7 @@ export async function POST(
           repo: job.repository.repository,
           defaultBranch: job.repository.default_branch || 'main',
         };
-        await closePullRequest(githubFor(job.github, repo), repo, job.task.pull_request_number,
+        await closePullRequest(await githubFor(job.github, repo), repo, job.task.pull_request_number,
           `Rejected in AgentSync by ${user.email}.`);
       }
     } catch (e) {

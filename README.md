@@ -366,7 +366,16 @@ malformed repository name, an out-of-range token lifetime, an empty allowlist an
 a pasted private key are each rejected by name, a valid call succeeds, re-saving
 updates in place, and disconnecting removes the row.
 
-**What the App needs.** Repository permissions: Contents (read & write), Pull
+**One click.** Connections → GitHub → *Connect GitHub* uses GitHub's App
+manifest flow: GitHub opens with the AgentSync App pre-filled (permissions
+below), you click Create, pick repositories, and are sent back connected. The
+App's private key is stored AES-256-GCM encrypted in `agentsync.encrypted_secrets`
+and referenced as `db:<id>`; the encryption key lives only in the deployment as
+`AGENTSYNC_ENCRYPTION_KEY` (set it once before the first connection). The state
+carried through GitHub's redirects is signed and bound to the person who
+started it.
+
+**By hand.** **What the App needs.** Repository permissions: Contents (read & write), Pull
 requests (read & write), Checks (read), Actions (read), Metadata (read). Put the
 private key in a Vercel environment variable (for example
 `GITHUB_APP_PRIVATE_KEY`, with newlines or `\n`) and enter

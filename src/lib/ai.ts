@@ -65,9 +65,9 @@ export async function loadAgent(taskId: string, key: string): Promise<AgentDefin
   return data as AgentDefinition;
 }
 
-function clientFor(ctx: AiContext): Anthropic {
+async function clientFor(ctx: AiContext): Promise<Anthropic> {
   const ref = ctx.credential?.key_reference;
-  const apiKey = ref ? resolveSecret(ref) : process.env.ANTHROPIC_API_KEY;
+  const apiKey = ref ? await resolveSecret(ref) : process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     throw new Error(
       'no Anthropic key: set ANTHROPIC_API_KEY or add an Anthropic credential under Connections',
@@ -103,7 +103,7 @@ export async function runAgent<T>(params: {
   }
 
   const model = agent.model || ctx.credential?.model || DEFAULT_MODEL;
-  const client = clientFor(ctx);
+  const client = await clientFor(ctx);
   const system = fill(agent.system_prompt ?? `You are the ${agent.display_name}.`, {
     'project.name': params.projectName,
   });

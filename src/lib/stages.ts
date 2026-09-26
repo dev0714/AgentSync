@@ -136,7 +136,7 @@ function repoOf(job: Job): Repo {
   };
 }
 
-function gh(job: Job): Octokit {
+async function gh(job: Job): Promise<Octokit> {
   return githubFor(job.github, repoOf(job));
 }
 
@@ -236,7 +236,7 @@ const KEY_FILES = [
 
 async function analyse(job: Job): Promise<Outcome> {
   const r = repoOf(job);
-  const client = gh(job);
+  const client = await gh(job);
   const paths = await listPaths(client, r, r.defaultBranch);
 
   const words = `${job.task.title} ${job.task.description ?? ''}`
@@ -369,7 +369,7 @@ type EditOut = { files: { path: string; action: 'create' | 'modify' | 'delete'; 
 async function implement(job: Job): Promise<Outcome> {
   if (!job.plan) throw new StageFailed('NO_PLAN', 'there is no plan to implement');
   const r = repoOf(job);
-  const client = gh(job);
+  const client = await gh(job);
   const branch = branchFor(job);
   const planned = job.plan.affected_files ?? [];
 
@@ -526,7 +526,7 @@ type ReviewOut = {
 
 async function test(job: Job): Promise<Outcome> {
   const r = repoOf(job);
-  const client = gh(job);
+  const client = await gh(job);
   const sha = job.task.commit_sha;
   if (!sha) throw new StageFailed('NO_COMMIT', 'nothing has been committed to test');
   const attempt = job.task.repair_attempts + 1;
@@ -617,7 +617,7 @@ async function test(job: Job): Promise<Outcome> {
 
 async function describePullRequest(job: Job): Promise<Outcome> {
   const r = repoOf(job);
-  const client = gh(job);
+  const client = await gh(job);
   if (!job.task.pull_request_number) throw new StageFailed('NO_PULL_REQUEST', 'no pull request is open for this task');
 
   const runs = (job.task.stage_state.checks ?? []) as { name: string; result: string }[];
@@ -653,7 +653,7 @@ async function describePullRequest(job: Job): Promise<Outcome> {
 
 async function ship(job: Job): Promise<Outcome> {
   const r = repoOf(job);
-  const client = gh(job);
+  const client = await gh(job);
   if (!job.task.pull_request_number) throw new StageFailed('NO_PULL_REQUEST', 'no pull request to merge');
 
   const mergeSha = await mergePullRequest(client, r, job.task.pull_request_number,
@@ -691,7 +691,7 @@ export async function sendCallback(job: Job, status: string, summary: string | n
     sent_at: new Date().toISOString(),
   });
   const headers: Record<string, string> = { 'content-type': 'application/json', 'user-agent': 'agentsync' };
-  const secret = optionalSecret(job.project.callback_signing_secret_ref);
+  const secret = await optionalSecret(job.project.callback_signing_secret_ref);
   if (secret) headers['x-agentsync-signature'] = `sha256=${createHmac('sha256', secret).update(body).digest('hex')}`;
 
   try {

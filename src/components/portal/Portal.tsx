@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Overview } from "@/lib/portal-data";
 import type { FilterKey } from "@/lib/portal-ui";
 import Icon from "@/components/site/Icon";
@@ -84,6 +84,36 @@ export default function Portal({
   const [projectGroup, setProjectGroup] = useState(0);
   const [tenantGroup, setTenantGroup] = useState(0);
   const [navOpen, setNavOpen] = useState(false);
+  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(
+    null,
+  );
+
+  // Coming back from GitHub's App flow lands on /portal?screen=connections&…
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    if (q.get("screen") !== "connections") return;
+    setScreen("connections");
+    setConnTab("github");
+    if (q.get("github_connected")) {
+      setNotice({
+        ok: true,
+        text:
+          q.get("github_connected") === "updated"
+            ? "GitHub installation updated."
+            : "GitHub is connected. The agents can now read, branch and open pull requests on the repositories you picked.",
+      });
+    } else if (q.get("github_error")) {
+      setNotice({
+        ok: false,
+        text: q.get("github_error") ?? "GitHub connection failed.",
+      });
+    }
+    q.delete("screen");
+    q.delete("github_connected");
+    q.delete("github_error");
+    const rest = q.toString();
+    window.history.replaceState(null, "", `/portal${rest ? `?${rest}` : ""}`);
+  }, []);
 
   const pendingCount = data.approvals.length + data.metrics.needs_information;
 
@@ -157,6 +187,24 @@ export default function Portal({
           </div>
 
           <div className="flex-1 overflow-y-auto px-4 pt-6 pb-12 sm:px-6 lg:px-8">
+            {notice ? (
+              <div
+                role="status"
+                className={`mb-5 flex items-start gap-3 rounded-[14px] border px-4 py-3 text-[14px] ${
+                  notice.ok
+                    ? "border-[#BFDFCB] bg-ok-tint text-ok-ink"
+                    : "border-[#F0C9C4] bg-danger-tint text-danger-ink"
+                }`}
+              >
+                <span className="flex-1">{notice.text}</span>
+                <button
+                  className="cursor-pointer text-[13px] font-medium underline"
+                  onClick={() => setNotice(null)}
+                >
+                  Dismiss
+                </button>
+              </div>
+            ) : null}
             {screen === "tasks" ? (
               <Tasks
                 tasks={data.tasks}

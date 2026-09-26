@@ -4,6 +4,7 @@ import type { Connections as ConnectionData } from '@/lib/portal-data';
 import { Pill, SetupSteps, Tabs, type SetupStep } from '../ui';
 import AiForm from './AiForm';
 import DeploymentForm from './DeploymentForm';
+import GithubOneClick from './GithubOneClick';
 import GithubForm from './GithubForm';
 import SecretsForm from './SecretsForm';
 import WebhookForm from './WebhookForm';
@@ -448,17 +449,28 @@ export default function Connections({
 
       {tab === 'github' ? (
         <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
-          {github ? null : (
-            <Card title="Connect GitHub" scope="four steps, once per tenant">
-              <SetupSteps steps={githubSteps()} />
+          {github ? (
+            <Card title="GitHub App installation" scope="github_app_installations">
+              <GithubForm tenantSlug={tenantSlug} existing={github} />
             </Card>
+          ) : (
+            <>
+              <div className="xl:col-span-2">
+                <Card title="Connect GitHub in one click" scope="creates and installs the AgentSync App">
+                  <GithubOneClick tenantSlug={tenantSlug} />
+                </Card>
+              </div>
+              <details className="card overflow-hidden xl:col-span-2">
+                <summary className="cursor-pointer px-4 py-3 text-[14px] font-medium text-ink-2">
+                  Set it up by hand instead
+                </summary>
+                <div className="grid grid-cols-1 items-start gap-4 border-t border-line p-4 xl:grid-cols-2">
+                  <SetupSteps steps={githubSteps()} />
+                  <GithubForm tenantSlug={tenantSlug} existing={github} />
+                </div>
+              </details>
+            </>
           )}
-          <Card
-            title={github ? 'GitHub App installation' : 'Installation details'}
-            scope="github_app_installations"
-          >
-            <GithubForm tenantSlug={tenantSlug} existing={github} />
-          </Card>
         </div>
       ) : null}
 
