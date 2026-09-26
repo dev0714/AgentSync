@@ -19,6 +19,7 @@ import {
   swatch,
 } from '@/lib/portal-ui';
 import { TierBadge } from '../tiers';
+import Attachments from './Attachments';
 import { Bar, CodeBlock, ColLabel, Pill, SectionTitle, Tabs } from '../ui';
 
 export type DetailTab = 'plan' | 'diff' | 'checks' | 'request' | 'events';
@@ -537,6 +538,8 @@ export default function Detail({
 
         {/* ---- right rail ---- */}
         <div className="flex flex-col gap-4">
+          <Attachments taskId={task.id} />
+
           <Rail title="WHERE IT IS">
             {recent.length === 0 ? (
               <div className="text-[13.5px] text-muted">

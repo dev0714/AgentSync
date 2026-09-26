@@ -2,6 +2,7 @@ import 'server-only';
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { serviceClient } from './supabase';
+import type { Attachment } from './attachments';
 import { resolveSecret } from './secrets';
 
 /**
@@ -168,8 +169,10 @@ function mayFailOver(ctx: AiContext, from: Provider, error: unknown): boolean {
 
 type CallResult = { text: string; model: string; input: number; output: number; cost: number; refused?: boolean; truncated?: boolean };
 
-async function callAnthropic(ctx: AiContext, model: string, effortIn: AgentDefinition['effort'], system: string, prompt: string, schema: Record<string, unknown>, maxTokens: number): Promise<CallResult> {
+async function callAnthropic(ctx: AiContext, model: string, effortIn: AgentDefinition['effort'], system: string, prompt: string, schema: Record<string, unknown>, maxTokens: number, attachments: Attachment[] = []): Promise<CallResult> {
   const client = await clientFor(ctx);
+  const { claudeBlocks } = await import('./attachments');
+  const blocks = await claudeBlocks(ctx, attachments);
   const effort = takesEffort(model) ? effortIn : null;
   const request = {
     model,
@@ -180,7 +183,12 @@ async function callAnthropic(ctx: AiContext, model: string, effortIn: AgentDefin
       format: { type: 'json_schema' as const, schema },
       ...(effort ? { effort } : {}),
     },
-    messages: [{ role: 'user' as const, content: prompt }],
+    messages: [{
+      role: 'user' as const,
+      content: blocks.length
+        ? ([...blocks, { type: 'text', text: prompt }] as Anthropic.ContentBlockParam[])
+        : prompt,
+    }],
   };
   const message = takesFallback(model)
     ? await client.beta.messages
@@ -205,12 +213,16 @@ async function callAnthropic(ctx: AiContext, model: string, effortIn: AgentDefin
   };
 }
 
-async function callOpenAI(ctx: AiContext, model: string, effort: AgentDefinition['effort'], system: string, prompt: string, schema: Record<string, unknown>, maxTokens: number): Promise<CallResult> {
+async function callOpenAI(ctx: AiContext, model: string, effort: AgentDefinition['effort'], system: string, prompt: string, schema: Record<string, unknown>, maxTokens: number, attachments: Attachment[] = []): Promise<CallResult> {
   const client = await openaiClientFor(ctx);
+  const { openaiParts } = await import('./attachments');
+  const parts = await openaiParts(ctx, attachments);
   const response = await client.responses.create({
     model,
     instructions: system,
-    input: prompt,
+    input: parts.length
+      ? ([{ role: 'user', content: [...parts, { type: 'input_text', text: prompt }] }] as OpenAI.Responses.ResponseInput)
+      : prompt,
     max_output_tokens: maxTokens,
     ...(effort ? { reasoning: { effort } } : {}),
     text: { format: { type: 'json_schema', name: 'agent_output', schema, strict: true } },
@@ -246,6 +258,8 @@ export async function runAgent<T>(params: {
   prompt: string;
   schema: Record<string, unknown>;
   maxTokens?: number;
+  /** Documents that came with the request; each provider gets them in its own form. */
+  attachments?: Attachment[];
 }): Promise<T> {
   const { ctx, agent } = params;
 
@@ -262,8 +276,8 @@ export async function runAgent<T>(params: {
   const maxTokens = params.maxTokens ?? 64000;
   const call = (provider: Provider, m: string) =>
     provider === 'openai'
-      ? callOpenAI(ctx, m, agent.effort, system, params.prompt, params.schema, maxTokens)
-      : callAnthropic(ctx, m, agent.effort, system, params.prompt, params.schema, maxTokens);
+      ? callOpenAI(ctx, m, agent.effort, system, params.prompt, params.schema, maxTokens, params.attachments)
+      : callAnthropic(ctx, m, agent.effort, system, params.prompt, params.schema, maxTokens, params.attachments);
 
   const started = Date.now();
   const primary = providerOf(model);

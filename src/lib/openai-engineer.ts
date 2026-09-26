@@ -90,6 +90,8 @@ export async function startOpenAIEngineer(params: {
   repoFullName: string;
   token: string;
   prompt: string;
+  /** Request attachments already uploaded to OpenAI, placed in the container. */
+  fileIds?: string[];
 }): Promise<{ sessionId: string; model: string }> {
   const client = await openaiClientFor(params.ctx);
   const model = engineerModel(params.ctx, params.engineer);
@@ -109,6 +111,7 @@ export async function startOpenAIEngineer(params: {
         environment: {
           type: 'container_auto',
           memory_limit: '4g',
+          ...(params.fileIds?.length ? { file_ids: params.fileIds } : {}),
           network_policy: {
             type: 'allowlist',
             allowed_domains: ALLOWED_DOMAINS,

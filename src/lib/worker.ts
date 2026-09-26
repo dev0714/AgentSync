@@ -6,7 +6,8 @@ import {
   reclaimExpiredTasks,
   transitionTask,
 } from './tasks';
-import { STAGES, StageFailed, loadJob, logEvent, sendCallback } from './stages';
+import { cleanupProviderFiles } from './attachments';
+import { STAGES, StageFailed, aiContext, loadJob, logEvent, sendCallback } from './stages';
 
 /**
  * The worker harness: claim a task, run the stage for its current status,
@@ -95,7 +96,11 @@ export async function tick(workerId: string): Promise<TickResult> {
           message: `${code}: ${detail}`.slice(0, 2000),
         }).catch((e) => console.error('could not record stage failure', e));
         await loadJob(taskId)
-          .then((job) => sendCallback(job, 'failed', `${code}: ${detail}`))
+          .then(async (job) => {
+            await sendCallback(job, 'failed', `${code}: ${detail}`);
+            // Provider copies of attachments go once the task is over.
+            await cleanupProviderFiles(aiContext(job), taskId);
+          })
           .catch(() => undefined);
         await logEvent(taskId, 'agent.failed', `${from} failed: ${detail}`.slice(0, 2000), { code });
 

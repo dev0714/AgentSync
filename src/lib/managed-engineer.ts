@@ -140,6 +140,8 @@ export async function startEngineerSession(params: {
   token: string;
   prompt: string;
   title: string;
+  /** Request attachments, mounted read-only under /workspace/attachments. */
+  files?: { type: 'file'; file_id: string; mount_path: string }[];
 }): Promise<{ sessionId: string; resourceId: string | null; model: string }> {
   const client = await clientFor(params.ctx);
   const { setup } = await ensureSetup(client, params.ctx, params.engineer);
@@ -165,6 +167,7 @@ export async function startEngineerSession(params: {
         mount_path: '/workspace/repo',
         checkout: { type: 'branch', name: params.checkoutBranch },
       },
+      ...(params.files ?? []),
     ],
     budget: {
       type: 'limit',

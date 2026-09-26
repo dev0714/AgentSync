@@ -26,6 +26,14 @@ import {
   type Installation,
   type Repo,
 } from './github';
+import {
+  claudeSandboxMounts,
+  cleanupProviderFiles,
+  openaiSandboxFileIds,
+  prepareAttachments,
+  readyAttachments,
+  sandboxAttachmentPrompt,
+} from './attachments';
 import { recall, remember, renderMemoryBlock } from './memory';
 import { optionalSecret } from './secrets';
 import { serviceClient } from './supabase';
@@ -154,7 +162,7 @@ async function gh(job: Job): Promise<Octokit> {
   return githubFor(job.github, repoOf(job));
 }
 
-function aiContext(job: Job): AiContext {
+export function aiContext(job: Job): AiContext {
   return {
     taskId: job.task.id,
     credential: job.ai,
@@ -251,6 +259,12 @@ const KEY_FILES = [
 ];
 
 async function analyse(job: Job): Promise<Outcome> {
+  // Documents from the source system: download, check, extract — once.
+  const docs = await prepareAttachments(job.task.id);
+  if (docs.ready || docs.rejected.length) {
+    await logEvent(job.task.id, 'attachments.prepared',
+      `${docs.ready} attachment(s) ready${docs.rejected.length ? `; rejected: ${docs.rejected.join('; ')}` : ''}`);
+  }
   const r = repoOf(job);
   const client = await gh(job);
   const paths = await listPaths(client, r, r.defaultBranch);
@@ -335,6 +349,7 @@ async function plan(job: Job): Promise<Outcome> {
     prompt,
     schema: PLAN_SCHEMA,
     maxTokens: 32000,
+    attachments: await readyAttachments(job.task.id),
   });
 
   const blocked = out.affected_files.filter((p) => isProtected(job, p) || !isAllowed(job, p));
@@ -417,6 +432,7 @@ async function implement(job: Job): Promise<Outcome> {
     projectName: job.project.name,
     prompt,
     schema: EDIT_SCHEMA,
+    attachments: await readyAttachments(job.task.id),
   });
 
   const rejected: string[] = [];
@@ -518,6 +534,7 @@ async function implementInSandbox(job: Job): Promise<Outcome> {
     const exists = (await branchSha(client, r, branch)) !== null;
     const engineer = await loadAgent(job.task.id, 'engineer');
     const memory = renderMemoryBlock(await recall(job.task.project_id, planned, 25));
+    const docs = await readyAttachments(job.task.id);
     const prompt = [
       taskBrief(job),
       `<approved_plan version="${job.plan?.version}">\n${job.plan?.summary}\n\nSteps:\n${JSON.stringify(job.plan?.steps, null, 2)}\n\nFiles you may change:\n${planned.join('\n')}\n\nTesting plan: ${job.plan?.testing_plan ?? 'run the project checks'}\n</approved_plan>`,
@@ -526,6 +543,7 @@ async function implementInSandbox(job: Job): Promise<Outcome> {
         ? `<previous_attempt_failed>\n${state.repair_feedback}\n</previous_attempt_failed>\nFix the cause of these failures on the same branch.`
         : '',
       memory,
+      sandboxAttachmentPrompt(docs, onOpenAI ? 'openai' : 'claude'),
       `Branch: ${branch} (${exists ? 'exists — check it out and build on it' : `create it from ${r.defaultBranch}`}). Default branch: ${r.defaultBranch}. Push the branch when the checks pass.`,
     ].filter(Boolean).join('\n\n');
 
@@ -538,6 +556,7 @@ async function implementInSandbox(job: Job): Promise<Outcome> {
           repoFullName: `${r.owner}/${r.repo}`,
           token,
           prompt,
+          fileIds: await openaiSandboxFileIds(ctx, docs),
         })), resourceId: null }
       : await startEngineerSession({
           ctx,
@@ -548,6 +567,7 @@ async function implementInSandbox(job: Job): Promise<Outcome> {
           token,
           prompt,
           title: `${reference(job)} — ${job.task.title}`,
+          files: await claudeSandboxMounts(ctx, docs),
         });
     const now = new Date().toISOString();
     await update(job, {
@@ -801,10 +821,11 @@ async function test(job: Job): Promise<Outcome> {
       taskBrief(job),
       `<approved_plan>\n${job.plan?.summary ?? ''}\n</approved_plan>`,
       `<diff>\n${diff}\n</diff>`,
-      'Judge every acceptance criterion separately. verdict "submit" means ready for a person to approve the merge; "changes" means the Engineer should fix what you list; "reject" means the approach is wrong.',
+      'Judge every acceptance criterion separately, and check the change against any attached documents too. verdict "submit" means ready for a person to approve the merge; "changes" means the Engineer should fix what you list; "reject" means the approach is wrong.',
     ].join('\n\n'),
     schema: REVIEW_SCHEMA,
     maxTokens: 32000,
+    attachments: await readyAttachments(job.task.id),
   });
 
   const { error } = await db().rpc('agentsync_record_review', { p_task_id: job.task.id, p_review: review });
@@ -887,6 +908,7 @@ async function ship(job: Job): Promise<Outcome> {
   }).catch((e) => console.error('could not write memory', e));
 
   await sendCallback(job, 'completed', summary);
+  await cleanupProviderFiles(aiContext(job), job.task.id).catch(() => undefined);
   return { to: 'completed', message: summary };
 }
 

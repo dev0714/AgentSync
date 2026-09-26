@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { storeIncoming, validateIncoming } from '@/lib/attachments';
 import { kickWorker } from '@/lib/kick';
 import { serviceClient } from '@/lib/supabase';
 import { submitTask, validateSubmission, type SubmitRequest } from '@/lib/tasks';
@@ -74,7 +75,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const problems = validateSubmission(body);
+  // Documents from the source system: [{filename, media_type?, content_base64 | url}]
+  const incoming = validateIncoming((body as { attachments?: unknown }).attachments);
+  const problems = [...validateSubmission(body), ...incoming.problems];
   if (problems.length > 0) {
     return NextResponse.json(
       { error: 'VALIDATION_FAILED', message: 'The payload is not valid.', problems },
@@ -105,6 +108,10 @@ export async function POST(request: NextRequest) {
   if (result.created && typeof tier === 'string' && ['low', 'medium', 'high'].includes(tier)) {
     await serviceClient().rpc('agentsync_set_task_tier', { p_task_id: result.task_id, p_tier: tier });
   }
+  let attachmentProblems: string[] = [];
+  if (result.created && incoming.items.length) {
+    attachmentProblems = await storeIncoming(result.task_id, incoming.items);
+  }
   if (result.created) kickWorker('submit');
 
   // 202 for new work, 200 when an existing task was returned for a repeated key
@@ -114,6 +121,7 @@ export async function POST(request: NextRequest) {
       correlation_id: result.correlation_id,
       status: result.status,
       duplicate: !result.created,
+      ...(attachmentProblems.length ? { attachment_problems: attachmentProblems } : {}),
     },
     { status: result.created ? 202 : 200 },
   );

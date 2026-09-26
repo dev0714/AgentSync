@@ -2,7 +2,8 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { currentUser } from '@/lib/auth';
 import { closePullRequest, githubFor } from '@/lib/github';
 import { kickWorker } from '@/lib/kick';
-import { loadJob } from '@/lib/stages';
+import { cleanupProviderFiles } from '@/lib/attachments';
+import { aiContext, loadJob } from '@/lib/stages';
 import { serviceClient } from '@/lib/supabase';
 
 /**
@@ -67,6 +68,7 @@ export async function POST(
   if (result.status === 'cancelled') {
     try {
       const job = await loadJob(id);
+      await cleanupProviderFiles(aiContext(job), id).catch(() => undefined);
       if (job.task.pull_request_number && job.repository) {
         const repo = {
           owner: job.repository.github_owner,

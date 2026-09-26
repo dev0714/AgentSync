@@ -158,7 +158,12 @@ Content-Type: application/json
   "acceptance_criteria": ["429 after 60 req/min", "existing tests pass"],
   "external_reference": "SD-4821",
   "requested_by": { "id": "u_91", "name": "Support" },
-  "callback_url": "https://desk.example.com/hooks/agentsync"
+  "callback_url": "https://desk.example.com/hooks/agentsync",
+  "tier": "medium",
+  "attachments": [
+    { "filename": "spec.pdf", "url": "https://files.desk.example.com/signed/…" },
+    { "filename": "screen.png", "content_base64": "iVBORw0KGgo…" }
+  ]
 }
 ```
 
@@ -177,6 +182,17 @@ Content-Type: application/json
   trip).
 - `callback_url` must be an absolute `https` URL — it is an outbound request
   AgentSync will make on the caller's behalf.
+- `attachments` (optional, up to 10, 25 MB each): documents from the source
+  system — PDF, PNG, JPEG, GIF, WebP, TXT, MD, CSV, JSON, DOCX, XLSX. Send each
+  as an https `url` (a signed link is fine — the worker downloads it once,
+  before analysis) or inline `content_base64` for small files (the request body
+  is capped at 4.5 MB). Files are checked against their type, kept in a private
+  bucket, and shown on the task. PDFs and images go to the models as files
+  (Claude and OpenAI Files APIs); Word and Excel are converted to text; both
+  sandboxes get the originals (`/workspace/attachments/…` for Claude). The
+  Planner, Engineer and Reviewer all see them, as reference material rather than
+  instructions. Provider copies expire after a week and are deleted when the task
+  ends. Problems with individual files come back as `attachment_problems`.
 
 Keys are issued once and stored hashed:
 
