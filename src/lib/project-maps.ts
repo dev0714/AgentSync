@@ -94,10 +94,35 @@ PY="$(command -v python3)"
     PIP_BREAK_SYSTEM_PACKAGES=1 "$PY" -m pip install --quiet --disable-pip-version-check --target /tmp/graphify-lib "graphifyy[sql]==${GRAPHIFY_VERSION}" &&
     RUNPY="$PY"
   fi &&
+  # The sandbox's Python is built without the bz2/lzma C modules. NetworkX
+  # imports bz2 without using it, so a stand-in is enough for code maps.
+  mkdir -p /tmp/graphify-stubs &&
+  "$RUNPY" - <<'STUBS' &&
+import importlib, os
+stubs = {
+    "_bz2": "class BZ2Compressor:\\n    def __init__(self, *a, **k): raise OSError('bz2 is not available')\\n"
+            "class BZ2Decompressor(BZ2Compressor): pass\\n",
+    "_lzma": "class LZMAError(Exception): pass\\n"
+             "class LZMACompressor:\\n    def __init__(self, *a, **k): raise LZMAError('lzma is not available')\\n"
+             "class LZMADecompressor(LZMACompressor): pass\\n"
+             "def is_check_supported(check): return False\\n"
+             "def _encode_filter_properties(f): raise LZMAError('lzma is not available')\\n"
+             "_decode_filter_properties = _encode_filter_properties\\n"
+             "FORMAT_AUTO, FORMAT_XZ, FORMAT_ALONE, FORMAT_RAW = 0, 1, 2, 3\\n"
+             "CHECK_NONE, CHECK_CRC32, CHECK_CRC64, CHECK_SHA256, CHECK_ID_MAX, CHECK_UNKNOWN = 0, 1, 4, 10, 15, 16\\n"
+             "PRESET_DEFAULT, PRESET_EXTREME = 6, 0x80000000\\n",
+}
+for name, body in stubs.items():
+    try:
+        importlib.import_module(name)
+    except ImportError:
+        with open(os.path.join("/tmp/graphify-stubs", name + ".py"), "w") as f:
+            f.write(body)
+STUBS
   if [ -f ${OUT}/cache.in.tgz ]; then tar -xzf ${OUT}/cache.in.tgz; fi &&
   UPDATE="" && if [ -f graphify-out/manifest.json ] && [ -f graphify-out/graph.json ]; then UPDATE="--update"; fi &&
-  env -i HOME=/tmp PATH=/usr/local/bin:/usr/bin:/bin PYTHONPATH=/tmp/graphify-lib "$RUNPY" -m graphify extract . --code-only $UPDATE &&
-  env -i HOME=/tmp PATH=/usr/local/bin:/usr/bin:/bin PYTHONPATH=/tmp/graphify-lib "$RUNPY" -m graphify cluster-only .
+  env -i HOME=/tmp PATH=/usr/local/bin:/usr/bin:/bin PYTHONPATH=/tmp/graphify-lib:/tmp/graphify-stubs "$RUNPY" -m graphify extract . --code-only $UPDATE &&
+  env -i HOME=/tmp PATH=/usr/local/bin:/usr/bin:/bin PYTHONPATH=/tmp/graphify-lib:/tmp/graphify-stubs "$RUNPY" -m graphify cluster-only .
 } > ${OUT}/log.txt 2>&1
 code=$?
 git rev-parse HEAD > ${OUT}/commit.txt 2>/dev/null
