@@ -183,6 +183,8 @@ export type ClaimedTask = {
   title: string;
   request_type: RequestType;
   priority: Priority;
+  /** The status the task was in when claimed; a new task arrives as `analysing`. */
+  status: string;
   lock_expires_at: string;
 };
 

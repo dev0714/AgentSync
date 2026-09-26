@@ -1,5 +1,9 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { kickWorker } from '@/lib/kick';
 import { submitTask, validateSubmission, type SubmitRequest } from '@/lib/tasks';
+
+// Work starts in the background after the 202 is sent.
+export const maxDuration = 300;
 
 /**
  * POST /api/v1/agent/tasks — the submission endpoint.
@@ -94,6 +98,8 @@ export async function POST(request: NextRequest) {
       { status: STATUS[result.error] ?? 400 },
     );
   }
+
+  if (result.created) kickWorker('submit');
 
   // 202 for new work, 200 when an existing task was returned for a repeated key
   return NextResponse.json(

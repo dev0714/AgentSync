@@ -1,144 +1,113 @@
 import 'server-only';
+import { serviceClient } from './supabase';
 import {
   claimNextTask,
   heartbeat,
   reclaimExpiredTasks,
   transitionTask,
-  type ClaimedTask,
 } from './tasks';
-import { recall, renderMemoryBlock } from './memory';
+import { STAGES, StageFailed, loadJob, logEvent, sendCallback } from './stages';
 
 /**
- * The worker harness: claim a task, hold the lease, advance it one stage,
- * release it.
+ * The worker harness: claim a task, run the stage for its current status,
+ * move it on, and keep going while there is time.
  *
- * Deployed on Vercel there is no long-running process, so this is written as a
- * single tick meant to be driven by a cron. Each tick reclaims dead leases,
- * takes at most one task, and runs exactly one stage — the loop lives in the
- * scheduler rather than in memory, which also means a crashed tick loses
- * nothing: the lease expires and the task returns to the queue.
+ * Deployed on Vercel there is no long-running process, so this runs inside a
+ * request — a cron tick, or a kick after a submission or a decision. A crashed
+ * tick loses nothing: the lease expires and the task is resumed, in the status
+ * it had reached, by the next one.
  *
- * Stage implementations are pluggable. The ones that need infrastructure that
- * doesn't exist yet (a repository checkout, an LLM key) refuse loudly rather
- * than pretending to succeed — a stage that silently no-ops would move a task
- * forward with nothing behind it, which is the one failure mode this pipeline
- * must not have.
+ * Stages never change status themselves. They return where the task goes next
+ * and this harness makes the move, so a gate cannot be skipped from inside a
+ * stage — and the database refuses human-only moves from the worker anyway.
  */
 
-export class StageNotConfigured extends Error {
-  readonly code: string;
-  constructor(stage: string, missing: string) {
-    super(`${stage} needs ${missing}`);
-    this.code = 'STAGE_NOT_CONFIGURED';
-    this.name = 'StageNotConfigured';
-  }
+/** Stop starting new stages after this long, leaving room inside maxDuration. */
+const BUDGET_MS = 200_000;
+const LEASE_SECONDS = 900;
+const WORKING = new Set(Object.keys(STAGES));
+
+export type TickResult = {
+  reclaimed: number;
+  steps: { task_id: string; from: string; to?: string; waiting?: number; error?: string }[];
+};
+
+async function release(taskId: string, workerId: string, delaySeconds = 0) {
+  const { error } = await serviceClient().rpc('agentsync_release_task', {
+    p_task_id: taskId,
+    p_worker_id: workerId,
+    p_delay_seconds: delaySeconds,
+  });
+  if (error) console.error('could not release task', error);
 }
 
-export type StageContext = {
-  task: ClaimedTask;
-  workerId: string;
-  /** Extends the lease; call during anything slow. */
-  keepAlive: () => Promise<boolean>;
-};
+export async function tick(workerId: string): Promise<TickResult> {
+  const started = Date.now();
+  const result: TickResult = { reclaimed: await reclaimExpiredTasks(), steps: [] };
 
-/** A stage advances a task and returns the status to move it to. */
-export type Stage = (ctx: StageContext) => Promise<string>;
+  while (Date.now() - started < BUDGET_MS) {
+    const claimed = await claimNextTask(workerId, LEASE_SECONDS);
+    if (!claimed) break;
 
-/**
- * Reads the repository and gathers the context the planner will need. Requires
- * a GitHub App installation and a checkout workspace — neither exists yet.
- */
-export const analyse: Stage = async () => {
-  throw new StageNotConfigured('analyse', 'a GitHub App installation and a checkout workspace');
-};
+    let status = claimed.status;
+    const taskId = claimed.task_id;
 
-/**
- * Produces the implementation plan.
- *
- * The memory layer is already wired here: the planner is given what the
- * project learned from earlier tasks, including previous edits to the paths it
- * is about to touch. What is missing is the model call itself.
- */
-export const plan: Stage = async ({ task }) => {
-  // Memory is real and queryable today, so gather it even though the model
-  // call below is not yet wired — it makes the missing piece obvious.
-  const memory = await recall(task.project_id, null, 25);
-  const block = renderMemoryBlock(memory);
-  void block;
+    // Carry this task as far as it will go before picking up another.
+    while (WORKING.has(status) && Date.now() - started < BUDGET_MS) {
+      const from = status;
+      try {
+        await heartbeat(taskId, workerId, LEASE_SECONDS);
+        const job = await loadJob(taskId);
+        const outcome = await STAGES[from](job);
 
-  if (!process.env.ANTHROPIC_API_KEY) {
-    throw new StageNotConfigured('plan', 'ANTHROPIC_API_KEY');
+        if ('wait' in outcome) {
+          await release(taskId, workerId, outcome.wait);
+          result.steps.push({ task_id: taskId, from, waiting: outcome.wait });
+          status = '';
+          break;
+        }
+
+        await transitionTask({
+          taskId,
+          to: outcome.to,
+          actor: workerId,
+          workerId,
+          message: outcome.message,
+        });
+        result.steps.push({ task_id: taskId, from, to: outcome.to });
+        status = outcome.to;
+      } catch (error) {
+        const code = error instanceof StageFailed ? error.code
+          : (error as { code?: string }).code && typeof (error as { code?: string }).code === 'string'
+            && /^[A-Z_]+$/.test((error as { code: string }).code) ? (error as { code: string }).code
+          : 'STAGE_FAILED';
+        const detail = error instanceof Error ? error.message : String(error);
+        console.error(`stage ${from} failed for ${taskId}`, error);
+
+        // Fail the task with the reason on record, rather than leaving it to
+        // time out and be retried into the same wall.
+        await serviceClient().rpc('agentsync_update_task', { p_task_id: taskId, p_fields: { error_code: code } });
+        await transitionTask({
+          taskId,
+          to: 'failed',
+          actor: workerId,
+          workerId,
+          message: `${code}: ${detail}`.slice(0, 2000),
+        }).catch((e) => console.error('could not record stage failure', e));
+        await loadJob(taskId)
+          .then((job) => sendCallback(job, 'failed', `${code}: ${detail}`))
+          .catch(() => undefined);
+        await logEvent(taskId, 'agent.failed', `${from} failed: ${detail}`.slice(0, 2000), { code });
+
+        result.steps.push({ task_id: taskId, from, to: 'failed', error: `${code}: ${detail}` });
+        status = 'failed';
+      }
+    }
+
+    // Paused at a gate, or out of time mid-pipeline: let go so the next
+    // decision or tick can pick it up. (Terminal statuses already cleared it.)
+    if (status) await release(taskId, workerId);
   }
-  throw new StageNotConfigured('plan', 'a provider adapter');
-};
 
-export const STAGES: Record<string, Stage> = {
-  analysing: analyse,
-  planning: plan,
-};
-
-export type TickResult =
-  | { worked: false; reclaimed: number; reason: 'queue_empty' }
-  | {
-      worked: true;
-      reclaimed: number;
-      task_id: string;
-      from: string;
-      to: string | null;
-      error?: string;
-    };
-
-/**
- * One unit of work. Safe to call concurrently: the claim is atomic, so two
- * ticks never take the same task.
- */
-export async function tick(workerId: string, leaseSeconds = 1800): Promise<TickResult> {
-  const reclaimed = await reclaimExpiredTasks();
-
-  const task = await claimNextTask(workerId, leaseSeconds);
-  if (!task) return { worked: false, reclaimed, reason: 'queue_empty' };
-
-  // claim_next_task leaves the task in `analysing`
-  const from = 'analysing';
-  const stage = STAGES[from];
-
-  const ctx: StageContext = {
-    task,
-    workerId,
-    keepAlive: () => heartbeat(task.task_id, workerId, leaseSeconds),
-  };
-
-  try {
-    const to = await stage(ctx);
-    await transitionTask({
-      taskId: task.task_id,
-      to,
-      actor: workerId,
-      workerId,
-      message: `${from} complete`,
-    });
-    return { worked: true, reclaimed, task_id: task.task_id, from, to };
-  } catch (error) {
-    const code = error instanceof StageNotConfigured ? error.code : 'STAGE_FAILED';
-    const detail = error instanceof Error ? error.message : String(error);
-
-    // Fail the task explicitly rather than leaving it to time out — a task
-    // that cannot proceed should say so now, with the reason on the record.
-    await transitionTask({
-      taskId: task.task_id,
-      to: 'failed',
-      actor: workerId,
-      workerId,
-      message: `${code}: ${detail}`,
-    }).catch((e) => console.error('could not record stage failure', e));
-
-    return {
-      worked: true,
-      reclaimed,
-      task_id: task.task_id,
-      from,
-      to: 'failed',
-      error: `${code}: ${detail}`,
-    };
-  }
+  return result;
 }

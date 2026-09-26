@@ -1,6 +1,9 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { tick } from '@/lib/worker';
 
+// A tick carries tasks through several stages, each of which may call a model.
+export const maxDuration = 300;
+
 /**
  * GET|POST /api/v1/worker/tick — drive the queue one step.
  *
