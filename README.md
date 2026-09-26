@@ -210,24 +210,44 @@ stage that can error, and `cancelled` from anything not yet merged.
 
 ### Queue and workers
 
-`agentsync.claim_next_task()` takes one queued task with
-`for update skip locked`, ordered by priority then age, and refuses to exceed
-the tenant's `maximum_concurrent_tasks`. The claim sets a lease;
-`heartbeat_task()` extends it and `reclaim_expired_tasks()` returns tasks whose
-worker died. A crashed worker therefore loses nothing — the lease expires and
-the task goes back on the queue.
+`agentsync.claim_next_task()` takes one task with `for update skip locked`:
+queued work, or work in progress (`analysing`, `planning`, `implementing`,
+`testing`, `creating_pull_request`, `deploying_production`) whose lease is free
+and whose `next_attempt_at` has passed. Work already started is resumed before
+new work is picked up, and the tenant's `maximum_concurrent_tasks` is never
+exceeded. A crashed worker loses nothing — its lease expires and the next tick
+resumes the task in the status it had reached.
 
-On Vercel there is no long-running process, so the loop lives in a cron
-(`vercel.json`) that calls `/api/v1/worker/tick`, authorised by `WORKER_SECRET`
-(or Vercel's `CRON_SECRET`) — never by a source-system key. Each tick reclaims,
-claims at most one task, and runs exactly one stage.
+On Vercel there is no long-running process. The worker runs inside a request:
+right after a task is submitted and right after a person decides at a gate
+(`after()` from `next/server`), with the per-minute cron in `vercel.json` as the
+backstop (per-minute crons need a Vercel Pro plan). `/api/v1/worker/tick` is
+authorised by `WORKER_SECRET` (or Vercel's `CRON_SECRET`), never by a
+source-system key. A tick carries a task through as many stages as fit in about
+200 seconds.
 
-**What is not built yet.** The `analyse` stage needs a GitHub App installation
-and a checkout workspace; the `plan` stage needs `ANTHROPIC_API_KEY` and a
-provider adapter. Both throw `StageNotConfigured` and fail the task with that
-reason on the record, rather than silently advancing it — a stage that no-ops
-would move a task forward with nothing behind it, which is the one failure mode
-this pipeline must not have.
+### What each agent does
+
+| Status | Agent | Work | Recorded in |
+|---|---|---|---|
+| `analysing` | Analyst | Reads the repository tree and the files that match the request, through the GitHub App | `task_events` |
+| `planning` | Planner (Claude) | Writes the plan: steps, files to touch, assumptions, open questions, rollback | `task_plans`, `task_ai_usage` |
+| `awaiting_plan_approval` | a person | Approve, request changes (re-plans with the note), or reject | `task_approvals` |
+| `implementing` | Engineer (Claude) | Writes full new file contents for the planned paths only, commits to `agentsync/<ref>`, opens the pull request | `task_file_changes` |
+| `testing` | Validator, then Reviewer (Claude) | Waits for the repository's GitHub checks; a failure goes back to the Engineer with the log (2 repair rounds by default). Then the Reviewer judges the diff against every acceptance criterion | `task_command_runs`, `task_reviews` |
+| `creating_pull_request` | worker | Writes the plan, checks and review into the pull request | `pull_request_body` |
+| `awaiting_merge_approval` | a person | Approve (AgentSync merges), request changes (back to the Engineer), or reject (the pull request is closed) | `task_approvals` |
+| `deploying_production` | worker | Squash-merges; Vercel's Git integration deploys main. Records a project memory and sends the callback | `task_events` |
+
+Guardrails are enforced in code, not asked for in prompts: the Engineer's
+changes outside the approved plan's paths are dropped, protected paths
+(`.github/workflows/**`, `.env*`, keys) are never written, and file and line
+limits come from `project_repositories`. Human-only transitions are refused by
+the database unless they come through `decide_approval`, which checks the
+user's role — the worker cannot approve its own work. Each agent's prompt and
+model come from `agent_definitions` / `agent_ai_configs` (the Agents screen);
+without a model set there, the tenant's Anthropic credential model is used,
+then `claude-opus-5`.
 
 Verified against the live database (all probes rolled back): an illegal
 transition is refused, two concurrent claims never take the same task, the
@@ -346,10 +366,14 @@ malformed repository name, an out-of-range token lifetime, an empty allowlist an
 a pasted private key are each rejected by name, a valid call succeeds, re-saving
 updates in place, and disconnecting removes the row.
 
-**Connecting GitHub does not yet make tasks run.** The `analyse` stage still has
-no checkout workspace and no token minting, so a submitted task goes
-`queued → analysing → failed` with `STAGE_NOT_CONFIGURED` recorded. The screen
-says so as its last setup step.
+**What the App needs.** Repository permissions: Contents (read & write), Pull
+requests (read & write), Checks (read), Actions (read), Metadata (read). Put the
+private key in a Vercel environment variable (for example
+`GITHUB_APP_PRIVATE_KEY`, with newlines or `\n`) and enter
+`env:GITHUB_APP_PRIVATE_KEY` as its reference. The repository should have a
+GitHub Actions workflow that runs on `pull_request` — `docs/agentsync-ci.example.yml`
+is a starting point; without one, tasks go to review with checks marked as not
+reported.
 
 ### Connecting a deployment provider
 
