@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { TierPicker, type Tier } from '../tiers';
 
 /**
  * A request for the agents, typed into the project it is for.
@@ -32,7 +33,9 @@ export default function RequestForm({
   enabled,
   canSubmit,
   onSubmitted,
+  defaultTier,
 }: {
+  defaultTier: Tier;
   projectId: string;
   repository: string;
   enabled: boolean;
@@ -44,6 +47,7 @@ export default function RequestForm({
   const [criteria, setCriteria] = useState('');
   const [type, setType] = useState('code_change');
   const [priority, setPriority] = useState('normal');
+  const [tier, setTier] = useState<Tier>(defaultTier);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -67,6 +71,7 @@ export default function RequestForm({
           description: description.trim() || undefined,
           request_type: type,
           priority,
+          tier,
           acceptance_criteria: criteria.split('\n').map((c) => c.trim()).filter(Boolean),
         }),
       });
@@ -132,6 +137,10 @@ export default function RequestForm({
             placeholder={'Filter shows Active, Paused and Closed\nThe choice survives a page reload'}
           />
         </label>
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[13px] font-medium text-ink-2">Tier</span>
+          <TierPicker value={tier} onChange={setTier} />
+        </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <label className="flex flex-col gap-1.5 sm:w-[240px]">
             <span className="text-[13px] font-medium text-ink-2">Type</span>

@@ -16,6 +16,9 @@ export const DEFAULT_MODEL = 'claude-opus-5';
 
 /** USD per million tokens, [input, output]. Unknown models are costed as Opus. */
 const PRICES: Record<string, [number, number]> = {
+  'claude-fable-5-1': [10, 50],
+  'claude-fable-5': [10, 50],
+  'claude-opus-5-5': [4, 20],
   'claude-opus-5': [5, 25],
   'claude-opus-4-8': [5, 25],
   'claude-opus-4-7': [5, 25],
@@ -51,8 +54,19 @@ export type AgentDefinition = {
   display_name: string;
   system_prompt: string | null;
   model: string | null;
+  /** Thinking effort for this agent at the task's tier; null where the model takes none. */
+  effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
+  /** The tier the task runs at: low, medium or high. */
+  tier: string | null;
   limits: Record<string, unknown> | null;
 };
+
+/** Haiku 4.5 predates adaptive thinking and effort; sending either is a 400. */
+const takesEffort = (model: string) => !model.startsWith('claude-haiku-4-5');
+
+/** Models that accept Anthropic's server-side refusal fallback. */
+const takesFallback = (model: string) =>
+  model.startsWith('claude-opus-5') || model.startsWith('claude-fable-5-1');
 
 /** Loads the agent a stage runs as: project override, then tenant, then platform. */
 export async function loadAgent(taskId: string, key: string): Promise<AgentDefinition> {
@@ -108,19 +122,21 @@ export async function runAgent<T>(params: {
     'project.name': params.projectName,
   });
 
+  const effort = takesEffort(model) ? agent.effort : null;
   const request = {
     model,
     max_tokens: params.maxTokens ?? 64000,
     system,
-    thinking: { type: 'adaptive' as const },
+    ...(takesEffort(model) ? { thinking: { type: 'adaptive' as const } } : {}),
     output_config: {
       format: { type: 'json_schema' as const, schema: params.schema },
+      ...(effort ? { effort } : {}),
     },
     messages: [{ role: 'user' as const, content: params.prompt }],
   };
 
   const started = Date.now();
-  const message = model.startsWith('claude-opus-5')
+  const message = takesFallback(model)
     ? await client.beta.messages
         .stream({
           ...request,

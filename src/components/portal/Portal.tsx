@@ -286,6 +286,7 @@ export default function Portal({
                 onTab={setAgentTab}
                 setupGroup={setupGroup}
                 onSetupGroup={setSetupGroup}
+                tenantSlug={data.tenant?.slug ?? null}
               />
             ) : null}
             {screen === "tenants" ? (

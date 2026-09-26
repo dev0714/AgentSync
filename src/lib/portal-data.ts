@@ -401,6 +401,8 @@ export type TaskEvent = {
 export type TaskDetail = {
   task: {
     id: string;
+    /** Low, medium or high: which model slot each agent uses. */
+    tier?: string | null;
     title: string;
     description: string | null;
     status: string;

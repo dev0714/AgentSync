@@ -48,6 +48,7 @@ export async function POST(request: NextRequest) {
     p_acceptance_criteria: Array.isArray(b.acceptance_criteria)
       ? (b.acceptance_criteria as string[]).map((c) => c.trim()).filter(Boolean)
       : [],
+    p_tier: ['low', 'medium', 'high'].includes(String(b.tier)) ? String(b.tier) : null,
   });
   if (error) {
     console.error('portal submit failed', error);

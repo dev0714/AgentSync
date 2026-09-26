@@ -18,6 +18,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { Ago, Bar, ColLabel, FieldRows, Pill, TableCard, Tabs } from '../ui';
 import RequestForm from './RequestForm';
+import { TierPicker, useTierSettings, type Tier } from '../tiers';
 import { IssueKeyForm } from './SetupForms';
 
 function SetupCard({ title, detail, children }: { title: string; detail: string; children: React.ReactNode }) {
@@ -108,6 +109,16 @@ export function Project_({
   const [syncing, setSyncing] = useState(false);
   const [syncNote, setSyncNote] = useState<{ ok: boolean; text: string } | null>(null);
   const appSlug = typeof github?.app_slug === 'string' ? github.app_slug : null;
+  const { settings: tiers, reload: reloadTiers } = useTierSettings(tenantSlug);
+
+  async function setProjectTier(projectId: string, tier: Tier) {
+    const res = await fetch('/api/portal/tiers', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ project_id: projectId, tier }),
+    });
+    if (res.ok) void reloadTiers();
+  }
 
   async function sync() {
     setSyncing(true);
@@ -232,8 +243,23 @@ export function Project_({
         Project ID for submissions: <span className="mono select-all text-ink-2">{project.id}</span>
       </div>
 
+      <div className="card flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="text-[15px] font-semibold text-ink">Default tier</div>
+          <div className="text-[13.5px] text-muted">
+            Which models the agents use for this project&apos;s requests, unless a request picks another.
+          </div>
+        </div>
+        <TierPicker
+          value={tiers?.projects[project.id] ?? 'medium'}
+          disabled={!tiers?.can_edit}
+          onChange={(t) => void setProjectTier(project.id, t)}
+        />
+      </div>
+
       <RequestForm
-        key={project.id}
+        key={`${project.id}:${tiers?.projects[project.id] ?? 'medium'}`}
+        defaultTier={tiers?.projects[project.id] ?? 'medium'}
         projectId={project.id}
         repository={
           project.repository?.github_owner

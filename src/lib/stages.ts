@@ -593,7 +593,7 @@ async function test(job: Job): Promise<Outcome> {
       'Judge every acceptance criterion separately. verdict "submit" means ready for a person to approve the merge; "changes" means the Engineer should fix what you list; "reject" means the approach is wrong.',
     ].join('\n\n'),
     schema: REVIEW_SCHEMA,
-    maxTokens: 16000,
+    maxTokens: 32000,
   });
 
   const { error } = await db().rpc('agentsync_record_review', { p_task_id: job.task.id, p_review: review });

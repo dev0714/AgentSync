@@ -10,10 +10,12 @@ import {
   rowsFrom,
   swatch,
 } from '@/lib/portal-ui';
+import { TierModels } from '../tiers';
 import { Ago, CodeBlock, ColLabel, Empty, FieldRows, Pill, Tabs } from '../ui';
 
 export const AGENT_TABS = [
   { k: 'setup', label: 'Setup' },
+  { k: 'models', label: 'Models by tier' },
   { k: 'prompt', label: 'Prompt' },
   { k: 'tools', label: 'Tools' },
   { k: 'pipeline', label: 'Pipeline' },
@@ -83,7 +85,9 @@ export default function Agents({
   onTab,
   setupGroup,
   onSetupGroup,
+  tenantSlug,
 }: {
+  tenantSlug: string | null;
   agents: AgentDefinition[];
   agentKey: string | null;
   onAgent: (k: string) => void;
@@ -208,6 +212,8 @@ export default function Agents({
             )}
           </div>
         ) : null}
+
+        {tab === 'models' ? <TierModels agentKey={agent.key} tenantSlug={tenantSlug} /> : null}
 
         {tab === 'prompt' ? (
           <div className="p-4">

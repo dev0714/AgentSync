@@ -18,6 +18,7 @@ import {
   statusLabel,
   swatch,
 } from '@/lib/portal-ui';
+import { TierBadge } from '../tiers';
 import { Bar, CodeBlock, ColLabel, Pill, SectionTitle, Tabs } from '../ui';
 
 export type DetailTab = 'plan' | 'diff' | 'checks' | 'request' | 'events';
@@ -171,6 +172,7 @@ export default function Detail({
             <Pill c={swatch(TASK_STATUS_COLOUR, task.status)}>
               {statusLabel(task.status)}
             </Pill>
+            <TierBadge tier={task.tier} />
             <span className="mono text-[12px] text-muted-2">
               corr: {task.correlation_id}
             </span>

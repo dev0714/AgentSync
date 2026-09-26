@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { kickWorker } from '@/lib/kick';
+import { serviceClient } from '@/lib/supabase';
 import { submitTask, validateSubmission, type SubmitRequest } from '@/lib/tasks';
 
 // Work starts in the background after the 202 is sent.
@@ -99,6 +100,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Optional tier: low, medium or high. Without it the project's default applies.
+  const tier = (body as { tier?: unknown }).tier;
+  if (result.created && typeof tier === 'string' && ['low', 'medium', 'high'].includes(tier)) {
+    await serviceClient().rpc('agentsync_set_task_tier', { p_task_id: result.task_id, p_tier: tier });
+  }
   if (result.created) kickWorker('submit');
 
   // 202 for new work, 200 when an existing task was returned for a repeated key
