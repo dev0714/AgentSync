@@ -31,7 +31,13 @@ const EFFORT_LABEL: Record<string, string> = {
 };
 
 export type Slot = { agent_key: string; tier: Tier; model: string; effort: string | null; overridden: boolean };
-export type TierSettings = { can_edit: boolean; slots: Slot[]; projects: Record<string, Tier> };
+export type EngineerMode = 'sandbox' | 'direct';
+export type TierSettings = {
+  can_edit: boolean;
+  slots: Slot[];
+  projects: Record<string, Tier>;
+  engineer_modes?: Record<string, EngineerMode>;
+};
 
 export function modelLabel(id: string) {
   return MODELS.find((m) => m.id === id)?.label ?? id;
@@ -72,6 +78,13 @@ export function TierModels({ agentKey, tenantSlug }: { agentKey: string; tenantS
         this agent uses the model below for it. Higher effort means more thinking: better results,
         more time and tokens.
       </div>
+      {agentKey === 'engineer' ? (
+        <div className="max-w-[80ch] rounded-xl border border-line-soft bg-agent-tint/50 px-4 py-3 text-[13.5px] text-ink-3" style={{ lineHeight: 1.55 }}>
+          In projects set to <strong>Sandbox</strong>, the Engineer runs as a Claude Managed Agent: each attempt is a
+          session in its own sandbox, at the model and effort below, with a spending cap of $3 / $8 / $20 for
+          Low / Medium / High.
+        </div>
+      ) : null}
       {slots.map((slot) => (
         <SlotRow
           key={slot.tier}

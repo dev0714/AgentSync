@@ -252,3 +252,36 @@ export async function closePullRequest(gh: Octokit, r: Repo, number: number, com
   await gh.issues.createComment({ owner: r.owner, repo: r.repo, issue_number: number, body: comment });
   await gh.pulls.update({ owner: r.owner, repo: r.repo, pull_number: number, state: 'closed' });
 }
+
+/**
+ * A short-lived installation token for handing to a Managed Agents session as
+ * its repository credential. Valid for about an hour; the worker rotates it
+ * while a session runs.
+ */
+export async function installationToken(install: Installation | null): Promise<string> {
+  if (!install?.app_id) throw new Error('no GitHub App is connected for this tenant');
+  const auth = createAppAuth({
+    appId: install.app_id,
+    privateKey: await resolveSecret(install.private_key_reference),
+    installationId: install.installation_id,
+  });
+  const { token } = await auth({ type: 'installation' });
+  return token;
+}
+
+export type ChangedFile = { filename: string; status: string; additions: number; deletions: number };
+
+/** Every file that differs between the default branch and `head`. */
+export async function changedFiles(gh: Octokit, r: Repo, head: string): Promise<ChangedFile[]> {
+  const { data } = await gh.repos.compareCommitsWithBasehead({
+    owner: r.owner,
+    repo: r.repo,
+    basehead: `${r.defaultBranch}...${head}`,
+  });
+  return (data.files ?? []).map((f) => ({
+    filename: f.filename,
+    status: f.status,
+    additions: f.additions,
+    deletions: f.deletions,
+  }));
+}

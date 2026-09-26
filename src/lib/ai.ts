@@ -79,7 +79,7 @@ export async function loadAgent(taskId: string, key: string): Promise<AgentDefin
   return data as AgentDefinition;
 }
 
-async function clientFor(ctx: AiContext): Promise<Anthropic> {
+export async function clientFor(ctx: AiContext): Promise<Anthropic> {
   const ref = ctx.credential?.key_reference;
   const apiKey = ref ? await resolveSecret(ref) : process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {

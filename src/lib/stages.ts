@@ -3,7 +3,16 @@ import { createHash, createHmac } from 'node:crypto';
 import type { Octokit } from '@octokit/rest';
 import { loadAgent, runAgent, type AiContext } from './ai';
 import {
+  engineerSessionState,
+  rotateSessionToken,
+  startEngineerSession,
+  stopEngineerSession,
+} from './managed-engineer';
+import {
+  branchSha,
+  changedFiles,
   checksFor,
+  installationToken,
   commitFiles,
   compareDiff,
   findOrOpenPullRequest,
@@ -58,6 +67,8 @@ export type Job = {
     name: string;
     plan_approval_required: boolean | null;
     monthly_ai_budget: number | null;
+    /** 'sandbox': the Engineer runs as a Managed Agent; 'direct': one model call. */
+    engineer_mode?: 'sandbox' | 'direct' | null;
     callback_signing_secret_ref: string | null;
   };
   repository: {
@@ -368,6 +379,7 @@ type EditOut = { files: { path: string; action: 'create' | 'modify' | 'delete'; 
 
 async function implement(job: Job): Promise<Outcome> {
   if (!job.plan) throw new StageFailed('NO_PLAN', 'there is no plan to implement');
+  if ((job.project.engineer_mode ?? 'sandbox') === 'sandbox') return implementInSandbox(job);
   const r = repoOf(job);
   const client = await gh(job);
   const branch = branchFor(job);
@@ -463,6 +475,184 @@ async function implement(job: Job): Promise<Outcome> {
 }
 
 /* ---- testing: the repo's CI, then the Reviewer ------------------------- */
+
+/* ---- implementing, in a sandbox: the Engineer as a Managed Agent ------- */
+
+const SESSION_LIMIT_MINUTES = 45;
+const TOKEN_ROTATE_MINUTES = 40;
+
+/**
+ * Starts (or checks on) the Engineer's sandbox session. The session clones the
+ * repository, implements the plan, runs the project's checks, fixes failures
+ * and pushes the branch. Nothing it pushed reaches a pull request until it is
+ * checked here against the approved plan and the protected paths.
+ */
+async function implementInSandbox(job: Job): Promise<Outcome> {
+  const r = repoOf(job);
+  const branch = branchFor(job);
+  const planned = job.plan?.affected_files ?? [];
+  const ctx = aiContext(job);
+  const state = job.task.stage_state as {
+    session_id?: string | null;
+    resource_id?: string | null;
+    session_started_at?: string | null;
+    token_at?: string | null;
+    session_model?: string | null;
+    repair_feedback?: string | null;
+  };
+
+  if (ctx.monthlyBudget !== null && ctx.monthlyBudget > 0 && ctx.monthSpend >= ctx.monthlyBudget) {
+    throw new StageFailed('BUDGET_EXCEEDED', `project has spent its $${ctx.monthlyBudget} monthly AI budget`);
+  }
+
+  // No session yet: start one.
+  if (!state.session_id) {
+    const client = await gh(job);
+    const exists = (await branchSha(client, r, branch)) !== null;
+    const engineer = await loadAgent(job.task.id, 'engineer');
+    const memory = renderMemoryBlock(await recall(job.task.project_id, planned, 25));
+    const prompt = [
+      taskBrief(job),
+      `<approved_plan version="${job.plan?.version}">\n${job.plan?.summary}\n\nSteps:\n${JSON.stringify(job.plan?.steps, null, 2)}\n\nFiles you may change:\n${planned.join('\n')}\n\nTesting plan: ${job.plan?.testing_plan ?? 'run the project checks'}\n</approved_plan>`,
+      humanFeedback(job),
+      state.repair_feedback
+        ? `<previous_attempt_failed>\n${state.repair_feedback}\n</previous_attempt_failed>\nFix the cause of these failures on the same branch.`
+        : '',
+      memory,
+      `Branch: ${branch} (${exists ? 'exists — check it out and build on it' : `create it from ${r.defaultBranch}`}). Default branch: ${r.defaultBranch}. Push the branch when the checks pass.`,
+    ].filter(Boolean).join('\n\n');
+
+    const token = await installationToken(job.github);
+    const started = await startEngineerSession({
+      ctx,
+      engineer,
+      projectName: job.project.name,
+      repoUrl: `https://github.com/${r.owner}/${r.repo}`,
+      checkoutBranch: exists ? branch : r.defaultBranch,
+      token,
+      prompt,
+      title: `${reference(job)} — ${job.task.title}`,
+    });
+    const now = new Date().toISOString();
+    await update(job, {
+      branch_name: branch,
+      stage_state: {
+        session_id: started.sessionId,
+        resource_id: started.resourceId,
+        session_started_at: now,
+        token_at: now,
+        session_model: started.model,
+      },
+    });
+    await logEvent(job.task.id, 'agent.sandbox_started',
+      `Engineer started in a sandbox (${started.model}, ${engineer.tier ?? 'medium'} tier)`,
+      { session_id: started.sessionId });
+    return { wait: 30 };
+  }
+
+  const sessionId = state.session_id;
+  const status = await engineerSessionState(ctx, sessionId);
+
+  if (status.state === 'running') {
+    const minutes = (Date.now() - Date.parse(state.session_started_at ?? new Date().toISOString())) / 60000;
+    if (minutes > SESSION_LIMIT_MINUTES) {
+      await stopEngineerSession(ctx, sessionId);
+      await update(job, { stage_state: { session_id: null } });
+      throw new StageFailed('SANDBOX_TIMED_OUT', `the Engineer was still working after ${SESSION_LIMIT_MINUTES} minutes`);
+    }
+    const tokenAge = (Date.now() - Date.parse(state.token_at ?? new Date().toISOString())) / 60000;
+    if (tokenAge > TOKEN_ROTATE_MINUTES && state.resource_id) {
+      await rotateSessionToken(ctx, sessionId, state.resource_id, await installationToken(job.github));
+      await update(job, { stage_state: { token_at: new Date().toISOString() } });
+    }
+    return { wait: 30 };
+  }
+
+  // The session has finished its turn (or stopped): record what it cost.
+  await serviceClient().rpc('agentsync_record_ai_usage', {
+    p_task_id: job.task.id,
+    p_agent_key: 'engineer',
+    p_model: state.session_model ?? 'claude-opus-5-5',
+    p_input_tokens: status.usage.input,
+    p_output_tokens: status.usage.output,
+    p_cost: status.usage.costCents / 100,
+    p_duration_seconds: (Date.now() - Date.parse(state.session_started_at ?? new Date().toISOString())) / 1000,
+  });
+  await update(job, { stage_state: { session_id: null, resource_id: null, repair_feedback: null } });
+
+  if (status.state === 'stopped') throw new StageFailed('SANDBOX_STOPPED', status.reason);
+  const report = status.report;
+  if (!report) throw new StageFailed('NO_REPORT', 'the Engineer finished without reporting what it did');
+  if (report.status === 'blocked') {
+    throw new StageFailed('ENGINEER_BLOCKED', report.notes || report.summary || 'the Engineer could not carry out the plan');
+  }
+
+  // Check what was actually pushed — not what the report says.
+  const client = await gh(job);
+  const head = await branchSha(client, r, branch);
+  if (!head) throw new StageFailed('NOT_PUSHED', `the Engineer reported success but ${branch} was not pushed`);
+  const files = await changedFiles(client, r, branch);
+  if (files.length === 0) throw new StageFailed('NO_CHANGES', `${branch} has no changes against ${r.defaultBranch}`);
+
+  const outside = files.filter((f) => !planned.includes(f.filename) || isProtected(job, f.filename) || !isAllowed(job, f.filename));
+  if (outside.length) {
+    await logEvent(job.task.id, 'guardrail.path_rejected',
+      `The sandbox changed files outside the approved plan: ${outside.map((f) => f.filename).join(', ')}`,
+      { paths: outside.map((f) => f.filename) });
+    throw new StageFailed('OUTSIDE_PLAN', `changes outside the approved plan: ${outside.map((f) => f.filename).join(', ')} — no pull request was opened`);
+  }
+  const maxFiles = job.repository?.maximum_files_changed ?? 20;
+  const lines = files.reduce((n, f) => n + f.additions + f.deletions, 0);
+  const maxLines = job.repository?.maximum_lines_changed ?? 400;
+  if (files.length > maxFiles) throw new StageFailed('CHANGE_LIMIT_EXCEEDED', `${files.length} files changed; the limit is ${maxFiles}`);
+  if (lines > maxLines) throw new StageFailed('CHANGE_LIMIT_EXCEEDED', `${lines} lines changed; the limit is ${maxLines}`);
+
+  for (const f of files) {
+    await serviceClient().rpc('agentsync_record_file_change', {
+      p_task_id: job.task.id,
+      p_path: f.filename,
+      p_action: f.status === 'added' ? 'CREATED' : f.status === 'removed' ? 'DELETED' : f.status === 'renamed' ? 'RENAMED' : 'MODIFIED',
+      p_additions: f.additions,
+      p_deletions: f.deletions,
+    });
+  }
+  const attempt = job.task.repair_attempts + 1;
+  for (const c of report.checks ?? []) {
+    await serviceClient().rpc('agentsync_record_command_run', {
+      p_task_id: job.task.id,
+      p_command_type: commandType(c.name),
+      p_command: c.command || c.name,
+      p_result: c.passed ? 'PASSED' : 'FAILED',
+      p_exit_code: c.passed ? 0 : 1,
+      p_attempt: attempt,
+      p_output: (c.output_tail ?? '').slice(-8000) || null,
+    });
+  }
+
+  const pr = await findOrOpenPullRequest(client, r, branch, `[AgentSync] ${job.task.title}`,
+    `AgentSync is working on this change (task ${reference(job)}). Checks and review are in progress; this pull request merges only after a person approves it in AgentSync.`);
+  await update(job, {
+    commit_sha: head,
+    pull_request_url: pr.url,
+    pull_request_number: pr.number,
+    stage_state: {
+      checks_since: new Date().toISOString(),
+      checks_done_for: null,
+      engineer_notes: report.notes,
+      sandbox_checks: (report.checks ?? []).map((c) => ({ name: c.name, result: c.passed ? 'PASSED' : 'FAILED' })),
+    },
+  });
+  await logEvent(job.task.id, 'agent.committed',
+    `Sandbox pushed ${files.length} file(s), +${files.reduce((n, f) => n + f.additions, 0)} −${files.reduce((n, f) => n + f.deletions, 0)}, to ${branch}. ${report.summary}`.slice(0, 1500),
+    { sha: head, pull_request: pr.url });
+
+  const failed = (report.checks ?? []).filter((c) => !c.passed);
+  if (failed.length) {
+    return repairOrFail(job, `${failed.length} check(s) still failing in the sandbox`,
+      failed.map((c) => `## ${c.name} (${c.command})\n${(c.output_tail ?? '').slice(-4000)}`).join('\n\n'));
+  }
+  return { to: 'testing' };
+}
 
 const FAILED = new Set(['failure', 'timed_out', 'cancelled', 'action_required', 'startup_failure', 'stale']);
 
@@ -620,7 +810,11 @@ async function describePullRequest(job: Job): Promise<Outcome> {
   const client = await gh(job);
   if (!job.task.pull_request_number) throw new StageFailed('NO_PULL_REQUEST', 'no pull request is open for this task');
 
-  const runs = (job.task.stage_state.checks ?? []) as { name: string; result: string }[];
+  const runs = [
+    ...((job.task.stage_state.sandbox_checks ?? []) as { name: string; result: string }[])
+      .map((c) => ({ name: `sandbox · ${c.name}`, result: c.result })),
+    ...((job.task.stage_state.checks ?? []) as { name: string; result: string }[]),
+  ];
   const checks = runs.map((c) => `| ${c.name} | ${c.result} |`).join('\n') || '| (none reported) | — |';
   const steps = Array.isArray(job.plan?.steps) ? (job.plan?.steps as unknown[]).map((s, i) => `${i + 1}. ${String(s)}`).join('\n') : '';
 

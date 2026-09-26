@@ -239,6 +239,22 @@ source-system key. A tick carries a task through as many stages as fit in about
 | `awaiting_merge_approval` | a person | Approve (AgentSync merges), request changes (back to the Engineer), or reject (the pull request is closed) | `task_approvals` |
 | `deploying_production` | worker | Squash-merges; Vercel's Git integration deploys main. Records a project memory and sends the callback | `task_events` |
 
+**Model tiers.** Every agent has a model and thinking effort for each of three
+tiers — Low, Medium, High — seeded with platform defaults and editable per
+tenant (Agents → *Models by tier*). Each project has a default tier; a request
+(portal or API, `"tier": "low" | "medium" | "high"`) can pick another.
+
+**The Engineer in a sandbox (hybrid).** In projects set to *Sandbox* (the
+default), the Engineer runs as a Claude Managed Agent: one session per attempt,
+at the task's tier (`agent_with_overrides`), with the repository cloned in via a
+short-lived GitHub App token (rotated while it runs) and a spending cap per
+tier. It installs, lints, tests and builds, fixes failures and pushes the
+branch; the worker polls the session. AgentSync then checks what was actually
+pushed against the approved plan and protected paths before opening the pull
+request. The Planner and Reviewer remain direct model calls. *Direct* mode keeps
+the single-call Engineer. The agent and environment are created once per
+Anthropic credential and updated (new version) when the Engineer prompt changes.
+
 Guardrails are enforced in code, not asked for in prompts: the Engineer's
 changes outside the approved plan's paths are dropped, protected paths
 (`.github/workflows/**`, `.env*`, keys) are never written, and file and line
