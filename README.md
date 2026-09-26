@@ -375,6 +375,11 @@ and referenced as `db:<id>`; the encryption key lives only in the deployment as
 carried through GitHub's redirects is signed and bound to the person who
 started it.
 
+**Requests from the portal.** Each project has a *New request* form (title,
+details, acceptance criteria, type, priority). It goes through exactly the
+same pipeline as an API submission, attributed to the signed-in person;
+viewers can see projects but not submit.
+
 **Each repository is a project.** Connecting GitHub creates one project per
 repository the App is installed on (plan and merge approval on; workflows,
 `.env*` and keys protected). Adding or removing repositories on GitHub and

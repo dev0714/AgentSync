@@ -244,6 +244,14 @@ export default function Portal({
                 projects={data.projects}
                 tenantSlug={data.tenant?.slug ?? null}
                 github={data.connections.github}
+                canSubmit={
+                  data.platform_role === "SUPER_ADMIN" ||
+                  (!!data.role && data.role !== "VIEWER")
+                }
+                onSubmitted={(id) => {
+                  openTask(id);
+                  router.refresh();
+                }}
                 onConnect={() => {
                   setScreen("connections");
                   setConnTab("github");

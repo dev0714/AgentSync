@@ -17,6 +17,7 @@ import {
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { Ago, Bar, ColLabel, FieldRows, Pill, TableCard, Tabs } from '../ui';
+import RequestForm from './RequestForm';
 import { IssueKeyForm } from './SetupForms';
 
 function SetupCard({ title, detail, children }: { title: string; detail: string; children: React.ReactNode }) {
@@ -85,7 +86,13 @@ export function Project_({
   tenantSlug,
   github,
   onConnect,
+  canSubmit,
+  onSubmitted,
 }: {
+  /** Whether the signed-in person's role may submit requests. */
+  canSubmit: boolean;
+  /** Called with the new task's id after a request is submitted. */
+  onSubmitted: (taskId: string) => void;
   tenantSlug: string | null;
   /** The tenant's GitHub connection, or null. */
   github: Record<string, unknown> | null;
@@ -224,6 +231,19 @@ export function Project_({
       <div className="text-[13px] text-muted-2">
         Project ID for submissions: <span className="mono select-all text-ink-2">{project.id}</span>
       </div>
+
+      <RequestForm
+        key={project.id}
+        projectId={project.id}
+        repository={
+          project.repository?.github_owner
+            ? `${project.repository.github_owner}/${project.repository.repository}`
+            : project.name
+        }
+        enabled={project.enabled}
+        canSubmit={canSubmit}
+        onSubmitted={onSubmitted}
+      />
 
       <div className="card overflow-hidden">
         <div className="card-head">
