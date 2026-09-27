@@ -1,7 +1,7 @@
 'use client';
 
 import type { Connections as ConnectionData } from '@/lib/portal-data';
-import { Pill, SetupSteps, Tabs, type SetupStep } from '../ui';
+import { Ago, SetupSteps, Tabs, type SetupStep } from '../ui';
 import AiForm from './AiForm';
 import DeploymentForm from './DeploymentForm';
 import GithubOneClick from './GithubOneClick';
@@ -363,87 +363,150 @@ export default function Connections({
 }) {
   const { github, deployment, ai, secrets, webhooks } = connections;
 
-  // One tile per external system, coloured by whether it is actually connected.
-  const tiles: {
+  // One card per external system: what it is for, whether it is connected,
+  // the facts that matter, and the one thing to do next.
+  const anthropic = ai.find((c) => String(c.provider) === 'anthropic');
+  const openai = ai.find((c) => String(c.provider) === 'openai');
+  const ref = (c: Record<string, unknown> | undefined) => (c ? String(c.key_reference ?? '—') : '—');
+  const cards: {
+    mark: string;
     name: string;
+    role: string;
     tab: ConnTab;
-    connected: boolean;
-    target: string;
-    meta: string;
+    state: 'connected' | 'missing' | 'optional';
+    rows: [string, string, boolean?][];
   }[] = [
     {
+      mark: 'GH',
       name: 'GitHub',
+      role: 'Reads code, pushes branches and opens pull requests',
       tab: 'github',
-      connected: Boolean(github),
-      target: github
-        ? `installation ${String(github.installation_id ?? '')}`
-        : 'no installation',
-      meta: github
-        ? `${(github.repository_allowlist as string[] | null)?.length ?? 0} repositories allowlisted`
-        : 'Required before any task can be checked out.',
+      state: github ? 'connected' : 'missing',
+      rows: github
+        ? [
+            ['App', String(github.app_slug ?? github.installation_id ?? '—'), true],
+            ['Repositories', `${(github.repository_allowlist as string[] | null)?.length ?? 0} allowed`],
+          ]
+        : [['Needed for', 'Every task: nothing can be checked out without it']],
     },
     {
-      name: 'Deployment',
+      mark: '▲',
+      name: 'Deployments',
+      role: 'Preview and production releases',
       tab: 'deploy',
-      connected: Boolean(deployment),
-      target: deployment ? String(deployment.provider ?? '') : 'no provider',
-      meta: deployment
-        ? `previews on ${String(deployment.preview_on ?? '—')}`
-        : 'Optional. Without it, previews and production deploys are skipped.',
+      state: deployment ? 'connected' : 'optional',
+      rows: deployment
+        ? [
+            ['Provider', String(deployment.provider ?? '—')],
+            ['Previews on', String(deployment.preview_on ?? '—')],
+          ]
+        : [['Without it', 'Previews and production releases are skipped']],
     },
     {
-      name: 'AI providers',
+      mark: 'A',
+      name: 'Anthropic',
+      role: 'Claude models and the Engineer’s sandbox',
       tab: 'ai',
-      connected: ai.length > 0,
-      target: ai.length ? ai.map((c) => String(c.provider)).join(', ') : 'none',
-      meta: ai.length
-        ? `${ai.length} credential${ai.length === 1 ? '' : 's'} configured`
-        : 'Required before any agent can call a model.',
+      state: anthropic ? 'connected' : 'missing',
+      rows: anthropic
+        ? [['Key', ref(anthropic), true], ['Default model', String(anthropic.model ?? '—'), true]]
+        : [['Needed for', 'Every agent: no model can be called without a provider']],
+    },
+    {
+      mark: 'O',
+      name: 'OpenAI',
+      role: 'Optional: a second provider for failover',
+      tab: 'ai',
+      state: openai ? 'connected' : 'optional',
+      rows: openai
+        ? [['Key', ref(openai), true], ['Default model', String(openai.model ?? '—'), true]]
+        : [['Used for', 'Taking over when Claude is busy, where projects allow it']],
     },
   ];
+  const missing = cards.filter((c) => c.state === 'missing' && !(c.name === 'Anthropic' && openai));
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="text-[14px] text-muted" style={{ lineHeight: 1.6 }}>
-        Every external system AgentSync talks to. Credentials are never stored
-        here in plain text — each connection holds a reference into the secret
-        manager, and any one of them can be disabled without touching project
-        configuration.
-      </div>
+      <p className="m-0 text-[14px] leading-relaxed text-muted-3">
+        The services AgentSync works through. Keys are never shown here: AgentSync stores a reference to where each one
+        lives, and any connection can be turned off without touching your projects.
+      </p>
 
-      <div className="border-b border-line">
+      <div className="border-b border-line-soft">
         <Tabs tabs={CONN_TABS} active={tab} onSelect={onTab} />
       </div>
 
       {tab === 'overview' ? (
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-          {tiles.map((t) => (
-            <button
-              key={t.name}
-              onClick={() => onTab(t.tab)}
-              className="card flex cursor-pointer flex-col gap-2 p-4 text-left hover:border-[var(--color-line-strong)]"
-            >
-              <div className="flex items-center gap-2">
-                <span
-                  className="size-1.5 rounded-full"
-                  style={{ background: t.connected ? 'var(--color-ok)' : 'var(--color-muted-4)' }}
-                />
-                <span className="flex-1 text-[15px] font-semibold">
-                  {t.name}
-                </span>
-                <Pill c={t.connected ? ['var(--color-ok-tint)', 'var(--color-ok-ink)'] : ['var(--color-line-faint)', 'var(--color-muted-2)']}>
-                  {t.connected ? 'CONNECTED' : 'NOT CONNECTED'}
-                </Pill>
+        <div className="flex flex-col gap-4">
+          {missing.length ? (
+            <div role="status" className="flex flex-wrap items-center gap-3 rounded-[10px] bg-caution-tint px-4 py-3 text-ink">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-caution-ink)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01" /><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" /></svg>
+              <span className="flex-1 text-[13.5px]">
+                <strong className="font-semibold">Finish setting up.</strong>{' '}
+                {missing.map((c) => c.name).join(' and ')} {missing.length === 1 ? 'is' : 'are'} needed before tasks can run.
+              </span>
+              <button className="btn" onClick={() => onTab(missing[0].tab)}>Connect {missing[0].name}</button>
+            </div>
+          ) : null}
+
+          <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-2">
+            {cards.map((c) => {
+              const pill: [string, string, string] =
+                c.state === 'connected'
+                  ? ['var(--color-ok-tint)', 'var(--color-ok-ink)', 'var(--color-ok)']
+                  : c.state === 'missing'
+                    ? ['var(--color-caution-tint)', 'var(--color-caution-ink)', 'var(--color-caution-ink)']
+                    : ['var(--color-line-faint)', 'var(--color-ink-3)', 'var(--color-muted-4)'];
+              return (
+                <section key={c.name} aria-label={c.name} className="card flex flex-col gap-3 p-5">
+                  <div className="flex items-center gap-3">
+                    <span aria-hidden="true" className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-line-soft bg-raised text-[12px] font-bold">
+                      {c.mark}
+                    </span>
+                    <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <h2 className="m-0 text-[15.5px] font-semibold">{c.name}</h2>
+                      <span className="text-[12.5px] text-muted-3">{c.role}</span>
+                    </div>
+                    <span className="inline-flex h-6 shrink-0 items-center gap-1.5 rounded-[5px] px-2 text-[12.5px] font-medium" style={{ background: pill[0], color: pill[1] }}>
+                      <span className="size-1.5 rounded-full" style={{ background: pill[2] }} />
+                      {c.state === 'connected' ? 'Connected' : c.state === 'missing' ? 'Needs setting up' : 'Not connected'}
+                    </span>
+                  </div>
+                  <dl className="m-0 grid grid-cols-[120px_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[13px]">
+                    {c.rows.map(([k, v, mono]) => (
+                      <div key={k} className="contents">
+                        <dt className="text-muted-3">{k}</dt>
+                        <dd className={`m-0 truncate ${mono ? 'mono text-[12.5px]' : ''}`}>{v}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                  <div>
+                    <button className={c.state === 'connected' ? 'btn' : 'btn-primary'} onClick={() => onTab(c.tab)}>
+                      {c.state === 'connected' ? 'Manage' : `Connect ${c.name}`}
+                    </button>
+                  </div>
+                </section>
+              );
+            })}
+          </div>
+
+          {secrets.length ? (
+            <section aria-labelledby="refs-h" className="card overflow-hidden">
+              <div className="flex items-center gap-3 border-b border-line-soft px-5 py-3">
+                <h2 id="refs-h" className="m-0 flex-1 text-[15px] font-semibold">Where the keys live</h2>
+                <button className="btn" onClick={() => onTab('secrets')}>Manage references</button>
               </div>
-              <div className="mono text-[12px] text-ink-3">{t.target}</div>
-              <div className="text-[13px] text-muted" style={{ lineHeight: 1.5 }}>
-                {t.meta}
-              </div>
-              <div className="mt-1 text-[13px] font-medium text-agent-ink">
-                {t.connected ? 'Review →' : 'Set up →'}
-              </div>
-            </button>
-          ))}
+              {secrets.slice(0, 6).map((sr) => (
+                <div key={sr.reference} className="grid grid-cols-[minmax(0,1fr)_200px_140px] items-center gap-4 border-b border-line-faint px-5 py-2.5 last:border-0">
+                  <span className="mono truncate text-[12.5px] text-ink-3">{sr.reference}</span>
+                  <span className="truncate text-[13px] text-muted-3">{sr.used_by ?? '—'}</span>
+                  <span className="text-right text-[12.5px] text-muted-3">
+                    {sr.revoked ? 'Revoked' : sr.rotated_at ? <>Rotated <Ago iso={sr.rotated_at} /> ago</> : 'Never rotated'}
+                  </span>
+                </div>
+              ))}
+            </section>
+          ) : null}
         </div>
       ) : null}
 

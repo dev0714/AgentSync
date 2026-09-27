@@ -1,7 +1,7 @@
 'use client';
 
 import { diffLines } from 'diff';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Ago, Pill, Tabs } from '../ui';
@@ -64,14 +64,26 @@ const REPO_STATE: Record<string, { label: string; colour: string }> = {
   unknown: { label: 'Not checked yet', colour: 'var(--color-muted-3)' },
 };
 
-type Tab = 'description' | 'history' | 'releases' | 'map';
+export type DocsTab = 'description' | 'history' | 'releases' | 'map';
+type Tab = DocsTab;
 
-export default function ProjectDocs({ projectId, tenantSlug, onOpenTask }: {
+/**
+ * Standalone it draws its own tab bar; the Projects screen instead drives the
+ * tab (`tab`/`onTab`), hides the bar (`bare`) and hears the counts it shows
+ * in its own tabs and header (`onSummary`).
+ */
+export default function ProjectDocs({ projectId, tenantSlug, onOpenTask, tab: controlled, onTab, bare = false, onSummary }: {
   projectId: string;
   tenantSlug: string | null;
   onOpenTask?: (taskId: string) => void;
+  tab?: Tab;
+  onTab?: (t: Tab) => void;
+  bare?: boolean;
+  onSummary?: (s: { versions: number; release: string | null }) => void;
 }) {
-  const [tab, setTab] = useState<Tab>('description');
+  const [own, setOwn] = useState<Tab>('description');
+  const tab = controlled ?? own;
+  const setTab = (t: Tab) => (onTab ? onTab(t) : setOwn(t));
   const [data, setData] = useState<Loaded | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -81,6 +93,8 @@ export default function ProjectDocs({ projectId, tenantSlug, onOpenTask }: {
   const [note, setNote] = useState('');
   const [viewing, setViewing] = useState<{ version: number; content: string; previous: string | null } | null>(null);
   const [bulk, setBulk] = useState<string | null>(null);
+  const onSummaryRef = useRef(onSummary);
+  onSummaryRef.current = onSummary;
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/portal/projects/${projectId}/docs?tenant=${encodeURIComponent(tenantSlug ?? '')}`, { cache: 'no-store' });
@@ -90,6 +104,7 @@ export default function ProjectDocs({ projectId, tenantSlug, onOpenTask }: {
       return;
     }
     setData(body);
+    onSummaryRef.current?.({ versions: body.versions?.length ?? 0, release: body.release_version ?? null });
   }, [projectId, tenantSlug]);
 
   useEffect(() => {
@@ -160,8 +175,8 @@ export default function ProjectDocs({ projectId, tenantSlug, onOpenTask }: {
   const state = REPO_STATE[doc?.repo_state ?? 'unknown'] ?? REPO_STATE.unknown;
 
   return (
-    <div className="card overflow-hidden">
-      <div className="card-head">
+    <div className={bare ? '' : 'card overflow-hidden'}>
+      <div className={bare ? 'hidden' : 'card-head'}>
         <Tabs<Tab>
           tabs={[
             { k: 'description', label: 'Description' },
@@ -174,7 +189,7 @@ export default function ProjectDocs({ projectId, tenantSlug, onOpenTask }: {
         />
       </div>
 
-      <div className="flex flex-col gap-4 p-4">
+      <div className={`flex flex-col gap-4 ${bare ? '' : 'p-4'}`}>
         {problem ? <div className="text-[13.5px] text-danger-ink">{problem}</div> : null}
         {notice ? <div className="rounded-md border border-line bg-raised px-3 py-2 text-[13.5px] text-ink-2">{notice}</div> : null}
 

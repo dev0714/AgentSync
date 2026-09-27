@@ -58,40 +58,48 @@ export default function Tenants({
   const g = groups[Math.min(group, groups.length - 1)];
 
   return (
-    <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[268px_1fr]">
-      <div className="flex flex-col gap-2">
-        <div className="label">All tenants</div>
-        {tenants.map((t) => (
-          <button
-            key={t.slug}
-            onClick={() => {
-              onSelect(t.slug);
-              onGroup(0);
-            }}
-            className="cursor-pointer rounded-lg border p-3 text-left"
-            style={{
-              background: tenant.slug === t.slug ? 'var(--color-raised)' : 'var(--color-card)',
-              borderColor: tenant.slug === t.slug ? 'var(--color-line-strong)' : 'var(--color-line)',
-            }}
-          >
-            <div className="flex items-center gap-2">
-              <span
-                className="size-1.5 rounded-full"
-                style={{
-                  background: t.status.toLowerCase() === 'active' ? 'var(--color-ok)' : 'var(--color-muted-4)',
-                }}
-              />
-              <span className="flex-1 text-[14.5px] font-semibold">{t.name}</span>
-              <span className="mono text-[11.5px] text-muted-2">{t.plan}</span>
-            </div>
-            <div className="mono mt-1 text-[11.5px] text-muted-3">{t.slug}</div>
-            <div className="mt-1 text-[13px] text-muted">
-              {t.project_count} project{t.project_count === 1 ? '' : 's'} ·{' '}
-              {t.task_count} task{t.task_count === 1 ? '' : 's'}
-            </div>
-          </button>
-        ))}
-      </div>
+    <div className="flex flex-col gap-4">
+      <p className="m-0 text-[14px] text-muted-3">Every organisation on this AgentSync. Pick one to see its settings and people.</p>
+      <section aria-label="All tenants" className="card overflow-x-auto">
+        <div className="grid min-w-[760px] grid-cols-[minmax(0,1fr)_100px_100px_110px_120px] gap-4 border-b border-line-soft bg-raised px-5 py-[9px]">
+          <ColLabel>Tenant</ColLabel>
+          <ColLabel>Plan</ColLabel>
+          <ColLabel>Projects</ColLabel>
+          <ColLabel>Tasks</ColLabel>
+          <ColLabel>State</ColLabel>
+        </div>
+        {tenants.map((t) => {
+          const on = tenant.slug === t.slug;
+          const active = t.status.toLowerCase() === 'active';
+          return (
+            <button
+              key={t.slug}
+              type="button"
+              aria-current={on ? 'true' : undefined}
+              onClick={() => {
+                onSelect(t.slug);
+                onGroup(0);
+              }}
+              className={`grid w-full min-w-[760px] cursor-pointer grid-cols-[minmax(0,1fr)_100px_100px_110px_120px] items-center gap-4 border-b border-line-faint px-5 py-3 text-left last:border-0 ${
+                on ? 'bg-raised shadow-[inset_3px_0_0_var(--color-ink)]' : 'hover:bg-raised'
+              }`}
+            >
+              <span className="flex min-w-0 flex-col">
+                <span className="truncate text-[14px] font-semibold">{t.name}</span>
+                <span className="mono truncate text-[12px] text-muted-3">{t.slug}</span>
+              </span>
+              <span className="text-[13px] text-ink-3">{t.plan ? statusLabel(t.plan) : '—'}</span>
+              <span className="text-[13px] tabular-nums">{t.project_count}</span>
+              <span className="text-[13px] tabular-nums">{t.task_count}</span>
+              <span>
+                <Pill c={active ? ['var(--color-ok-tint)', 'var(--color-ok-ink)'] : ['var(--color-caution-tint)', 'var(--color-caution-ink)']}>
+                  {statusLabel(t.status)}
+                </Pill>
+              </span>
+            </button>
+          );
+        })}
+      </section>
 
       <div className="card min-w-0 overflow-hidden">
         <div className="flex flex-col items-start gap-4 p-4 lg:flex-row lg:items-center">

@@ -17,7 +17,9 @@ import RequestForm from './RequestForm';
 import { TierPicker, useTierSettings, type EngineerMode, type Tier } from '../tiers';
 import { IssueKeyForm } from './SetupForms';
 import SourceClients from './SourceClients';
-import ProjectDocs from './ProjectDocs';
+import ProjectDocs, { type DocsTab } from './ProjectDocs';
+
+type ProjectTab = DocsTab | 'settings' | 'request';
 
 function SetupCard({ title, detail, children }: { title: string; detail: string; children: React.ReactNode }) {
   return (
@@ -109,6 +111,10 @@ export function Project_({
   const router = useRouter();
   const [syncing, setSyncing] = useState(false);
   const [syncNote, setSyncNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const [tab, setTab] = useState<ProjectTab>('description');
+  const [filterText, setFilterText] = useState('');
+  const [summary, setSummary] = useState<{ versions: number; release: string | null } | null>(null);
+  const [summaryFor, setSummaryFor] = useState<string | null>(null);
   const appSlug = typeof github?.app_slug === 'string' ? github.app_slug : null;
   const { settings: tiers, reload: reloadTiers } = useTierSettings(tenantSlug);
 
@@ -210,163 +216,234 @@ export function Project_({
   const project = projects.find((p) => p.id === selected) ?? projects[0];
   const groups = groupsFor(project);
   const g = groups[Math.min(group, groups.length - 1)];
+  const repoName = (p: ProjectRecord) =>
+    p.repository?.github_owner && p.repository?.repository ? `${p.repository.github_owner}/${p.repository.repository}` : p.slug;
+  const shownProjects = projects.filter((p) => {
+    const q = filterText.trim().toLowerCase();
+    return !q || `${p.name} ${repoName(p)}`.toLowerCase().includes(q);
+  });
+  const tier = tiers?.projects[project.id] ?? 'medium';
+  if (summaryFor !== project.id) {
+    // A different project: its counts arrive when its description loads.
+    setSummaryFor(project.id);
+    setSummary(null);
+  }
+  const TAB_LIST: { k: ProjectTab; label: string }[] = [
+    { k: 'description', label: 'Description' },
+    { k: 'history', label: `History${summary?.versions ? ` · ${summary.versions}` : ''}` },
+    { k: 'releases', label: 'Releases' },
+    { k: 'map', label: 'Code map' },
+    { k: 'settings', label: 'Settings' },
+    { k: 'request', label: 'New request' },
+  ];
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-3">
-        {projects.length > 1 ? (
-          <select
-            className="field-select !w-auto"
-            value={project.id}
-            onChange={(e) => {
-              onSelect(e.target.value);
-              onGroup(0);
-            }}
-            aria-label="Project"
-          >
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.repository?.github_owner
-                  ? `${p.repository.github_owner}/${p.repository.repository}`
-                  : p.name}
-                {p.enabled ? '' : ' (disabled)'}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <div className="text-[20px] font-semibold tracking-[-0.02em]">
-            {project.name}
-          </div>
-        )}
-        <Pill c={project.enabled ? ['var(--color-ok-tint)', 'var(--color-ok-ink)'] : ['var(--color-line-faint)', 'var(--color-muted-2)']}>
-          {project.enabled ? 'Active' : 'Disabled — not in the GitHub installation'}
-        </Pill>
-        <span className="mono text-[12.5px] text-muted-2">
-          {project.repository?.github_owner && project.repository?.repository
-            ? `${project.repository.github_owner}/${project.repository.repository}`
-            : project.slug}
-        </span>
-        <div className="ml-auto flex flex-wrap gap-2">
-          {manage}
-          {github ? (
-            <button className="btn" onClick={sync} disabled={syncing}>
-              {syncing ? 'Syncing…' : 'Sync from GitHub'}
-            </button>
-          ) : null}
+    <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
+      {/* ---- the project list ---- */}
+      <section aria-label="Projects" className="card flex shrink-0 flex-col overflow-hidden xl:sticky xl:top-0 xl:w-[300px]">
+        <div className="flex flex-col gap-2.5 border-b border-line-soft p-3.5">
+          <label className="flex h-9 items-center gap-2 rounded-lg border border-line-soft bg-raised px-2.5 text-muted-3">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
+            <span className="sr-only">Filter projects</span>
+            <input
+              type="search"
+              value={filterText}
+              onChange={(e) => setFilterText(e.target.value)}
+              placeholder={`Filter ${projects.length} project${projects.length === 1 ? '' : 's'}`}
+              className="min-w-0 flex-1 border-0 bg-transparent text-[13.5px] text-ink outline-none"
+            />
+          </label>
         </div>
-      </div>
-      {syncNote ? (
-        <div className={`text-[13.5px] ${syncNote.ok ? 'text-ok-ink' : 'text-danger-ink'}`}>{syncNote.text}</div>
-      ) : null}
-      <div className="text-[13px] text-muted-2">
-        Project ID for submissions: <span className="mono select-all text-ink-2">{project.id}</span>
-      </div>
-
-      <div className="card flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <div className="text-[15px] font-semibold text-ink">Default tier</div>
-          <div className="text-[13.5px] text-muted">
-            Which models the agents use for this project&apos;s requests, unless a request picks another.
-          </div>
-        </div>
-        <TierPicker
-          value={tiers?.projects[project.id] ?? 'medium'}
-          disabled={!tiers?.can_edit}
-          onChange={(t) => void setProjectTier(project.id, t)}
-        />
-      </div>
-
-      <div className="card flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
-        <div className="max-w-[60ch]">
-          <div className="text-[15px] font-semibold text-ink">Where the Engineer works</div>
-          <div className="text-[13.5px] text-muted" style={{ lineHeight: 1.55 }}>
-            {{
-              sandbox: 'Claude sandbox (Managed Agents): it clones the repository, runs your install, lint, tests and build, fixes what fails, then pushes. AgentSync checks the pushed changes against the plan before any pull request.',
-              openai_sandbox: "OpenAI sandbox (hosted shell container): the same job in OpenAI's container, using the Engineer's GPT model for the tier. Needs an OpenAI key. AgentSync checks the pushed changes against the plan before any pull request.",
-              direct: 'Direct: one model call writes the planned files; your GitHub Actions are the only checks. Cheaper, but nothing is run before the push.',
-            }[tiers?.engineer_modes?.[project.id] ?? 'sandbox']}
-          </div>
-        </div>
-        <div role="radiogroup" aria-label="Engineer mode" className="inline-flex w-fit shrink-0 rounded-xl border border-line bg-card p-1">
-          {(['sandbox', 'openai_sandbox', 'direct'] as const).map((m) => {
-            const active = (tiers?.engineer_modes?.[project.id] ?? 'sandbox') === m;
+        <div className="max-h-[420px] overflow-y-auto xl:max-h-[calc(100vh-260px)]">
+          {shownProjects.map((p) => {
+            const on = p.id === project.id;
             return (
               <button
-                key={m}
+                key={p.id}
                 type="button"
-                role="radio"
-                aria-checked={active}
-                disabled={!tiers?.can_edit}
-                onClick={() => void setEngineerMode(project.id, m)}
-                className={`min-h-[34px] cursor-pointer rounded-lg px-4 text-[13.5px] font-medium ${
-                  active ? 'bg-ink text-canvas' : 'text-ink-3 hover:bg-canvas'
-                }`}
+                onClick={() => { onSelect(p.id); onGroup(0); }}
+                aria-current={on ? 'true' : undefined}
+                className={`flex w-full cursor-pointer flex-col gap-1 border-b border-line-faint px-4 py-3 text-left ${on ? 'bg-raised shadow-[inset_3px_0_0_var(--color-ink)]' : 'hover:bg-raised'}`}
               >
-                {m === 'sandbox' ? 'Claude sandbox' : m === 'openai_sandbox' ? 'OpenAI sandbox' : 'Direct'}
+                <span className="flex items-center gap-2">
+                  <span className="size-1.5 rounded-full" style={{ background: p.enabled ? 'var(--color-ok)' : 'var(--color-muted-4)' }} />
+                  <span className="flex-1 truncate text-[14px] font-semibold">{p.name}</span>
+                  {Number(p.spend) > 0 ? <span className="text-[12px] text-muted-3 tabular-nums">${Number(p.spend).toFixed(2)}</span> : null}
+                </span>
+                <span className="mono truncate pl-3.5 text-[12px] text-muted-3">{repoName(p)}</span>
+                {!p.enabled ? <span className="pl-3.5 text-[12px] text-muted-3">Not in the GitHub installation</span> : null}
               </button>
             );
           })}
+          {shownProjects.length === 0 ? <div className="px-4 py-4 text-[13.5px] text-muted-3">No project matches.</div> : null}
         </div>
-      </div>
+        <div className="flex flex-col gap-2 border-t border-line-soft p-3.5">
+          {github ? (
+            <button className="btn w-full" onClick={sync} disabled={syncing}>
+              {syncing ? 'Syncing…' : 'Sync from GitHub'}
+            </button>
+          ) : null}
+          {appSlug ? (
+            <a
+              className="text-center text-[13px] text-agent-ink"
+              href={`https://github.com/apps/${appSlug}/installations/new`}
+              target="_blank"
+              rel="noreferrer noopener"
+            >
+              Add or remove repositories ↗
+            </a>
+          ) : null}
+          {syncNote ? (
+            <div className={`text-[13px] ${syncNote.ok ? 'text-ok-ink' : 'text-danger-ink'}`}>{syncNote.text}</div>
+          ) : null}
+        </div>
+      </section>
 
-      <div className="card flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
-        <div className="max-w-[60ch]">
-          <div className="text-[15px] font-semibold text-ink">Fail over to the other provider</div>
-          <div className="text-[13.5px] text-muted" style={{ lineHeight: 1.55 }}>
-            If a Claude call fails with a rate limit, timeout or server error, retry that step on OpenAI (and the
-            other way round) — per the triggers on each key under Connections → AI providers. Both keys must be set.
+      {/* ---- one project ---- */}
+      <section aria-label={project.name} className="card min-w-0 flex-1 overflow-hidden">
+        <div className="flex flex-col gap-3 px-5 pt-5 sm:px-7">
+          <div className="flex flex-wrap items-start gap-3">
+            <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <h2 className="m-0 text-[22px] font-semibold tracking-[-0.02em]">{project.name}</h2>
+                <Pill c={project.enabled ? ['var(--color-ok-tint)', 'var(--color-ok-ink)'] : ['var(--color-line-faint)', 'var(--color-muted-2)']}>
+                  {project.enabled ? 'Active' : 'Disabled'}
+                </Pill>
+              </div>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-muted-3">
+                <span className="mono">{repoName(project)}</span>
+                <span>
+                  Released{' '}
+                  <strong className="font-semibold text-ink tabular-nums">{summary?.release ? `v${summary.release}` : 'nothing yet'}</strong>
+                </span>
+                {project.repository?.default_branch ? (
+                  <span>Default branch <span className="mono">{project.repository.default_branch}</span></span>
+                ) : null}
+                <span title="Use this id when a source system submits work for this project">
+                  Project id <span className="mono select-all text-ink-3">{project.id.slice(0, 8)}…</span>
+                </span>
+              </div>
+            </div>
+            <button className="btn-primary" onClick={() => setTab('request')} disabled={!project.enabled}>
+              New request
+            </button>
+          </div>
+          <div className="-mx-5 border-b border-line-soft px-1 sm:-mx-7 sm:px-3">
+            <Tabs tabs={TAB_LIST} active={tab} onSelect={setTab} />
           </div>
         </div>
-        <label className="flex shrink-0 items-center gap-2.5 text-[14px] font-medium text-ink-2">
-          <input
-            type="checkbox"
-            className="size-4 accent-[var(--color-accent)]"
-            checked={Boolean(tiers?.failover?.[project.id])}
-            disabled={!tiers?.can_edit}
-            onChange={(e) => void setFailover(project.id, e.target.checked)}
-          />
-          {tiers?.failover?.[project.id] ? 'On' : 'Off'}
-        </label>
-      </div>
 
-      <ProjectDocs key={`docs:${project.id}`} projectId={project.id} tenantSlug={tenantSlug} onOpenTask={onOpenTask} />
+        <div className="px-5 py-5 sm:px-7">
+          {tab === 'description' || tab === 'history' || tab === 'releases' || tab === 'map' ? (
+            <ProjectDocs
+              key={`docs:${project.id}`}
+              projectId={project.id}
+              tenantSlug={tenantSlug}
+              onOpenTask={onOpenTask}
+              tab={tab}
+              onTab={setTab}
+              bare
+              onSummary={setSummary}
+            />
+          ) : null}
 
-      <RequestForm
-        key={`${project.id}:${tiers?.projects[project.id] ?? 'medium'}`}
-        defaultTier={tiers?.projects[project.id] ?? 'medium'}
-        projectId={project.id}
-        repository={
-          project.repository?.github_owner
-            ? `${project.repository.github_owner}/${project.repository.repository}`
-            : project.name
-        }
-        enabled={project.enabled}
-        canSubmit={canSubmit}
-        onSubmitted={onSubmitted}
-      />
+          {tab === 'request' ? (
+            <RequestForm
+              key={`${project.id}:${tier}`}
+              defaultTier={tier}
+              projectId={project.id}
+              repository={repoName(project)}
+              enabled={project.enabled}
+              canSubmit={canSubmit}
+              onSubmitted={onSubmitted}
+            />
+          ) : null}
 
-      <div className="card overflow-hidden">
-        <div className="card-head">
-          <Tabs
-            tabs={groups.map((pg, i) => ({ k: String(i), label: pg.title }))}
-            active={String(Math.min(group, groups.length - 1))}
-            onSelect={(k) => onGroup(Number(k))}
-          />
-        </div>
-        <div className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-3">
-          <div className="text-[14.5px] font-semibold">{g.title}</div>
-          <div className="mono text-[11.5px] text-muted-2">{g.table}</div>
-        </div>
-        <div className="p-4">
-          {g.rows.length === 0 ? (
-            <div className="text-[14px] text-muted" style={{ lineHeight: 1.6 }}>
-              {g.missing ?? 'Nothing configured.'}
+          {tab === 'settings' ? (
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-3 rounded-[10px] border border-line-soft p-5 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="text-[15px] font-semibold text-ink">Default size</div>
+                  <div className="text-[13.5px] text-muted-3">
+                    Which models the agents use for this project&apos;s requests, unless a request picks another.
+                  </div>
+                </div>
+                <TierPicker
+                  value={tier}
+                  disabled={!tiers?.can_edit}
+                  onChange={(t) => void setProjectTier(project.id, t)}
+                />
+              </div>
+
+              <div className="flex flex-col gap-3 rounded-[10px] border border-line-soft p-5">
+                <div>
+                  <div className="text-[15px] font-semibold text-ink">Where the Engineer writes code</div>
+                  <div className="text-[13.5px] text-muted-3">Checked against the plan before any pull request, whichever you choose.</div>
+                </div>
+                <div role="radiogroup" aria-label="Engineer mode" className="grid grid-cols-1 gap-2 md:grid-cols-3">
+                  {([
+                    ['sandbox', 'Claude sandbox', 'Clones the repository, runs install, lint, tests and build, fixes what fails, then pushes. Recommended.'],
+                    ['openai_sandbox', 'OpenAI sandbox', 'The same job in OpenAI’s container. Needs an OpenAI key.'],
+                    ['direct', 'Direct', 'One model call writes the planned files; only your GitHub Actions check them. Cheaper.'],
+                  ] as const).map(([m, name, does]) => {
+                    const active = (tiers?.engineer_modes?.[project.id] ?? 'sandbox') === m;
+                    return (
+                      <button
+                        key={m}
+                        type="button"
+                        role="radio"
+                        aria-checked={active}
+                        disabled={!tiers?.can_edit}
+                        onClick={() => void setEngineerMode(project.id, m)}
+                        className={`flex cursor-pointer flex-col items-start gap-1 rounded-lg border p-3 text-left disabled:cursor-default ${
+                          active ? 'border-ink bg-raised shadow-[0_0_0_1px_var(--color-ink)]' : 'border-line-soft hover:border-line-strong'
+                        }`}
+                      >
+                        <span className="text-[13.5px] font-semibold">{name}</span>
+                        <span className="text-[12.5px] leading-snug text-muted-3">{does}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <label className="flex cursor-pointer items-start gap-3 rounded-[10px] border border-line-soft p-5">
+                <input
+                  type="checkbox"
+                  className="mt-1 size-4 accent-[var(--color-ink)]"
+                  checked={Boolean(tiers?.failover?.[project.id])}
+                  disabled={!tiers?.can_edit}
+                  onChange={(e) => void setFailover(project.id, e.target.checked)}
+                />
+                <span className="flex flex-col gap-1">
+                  <span className="text-[15px] font-semibold text-ink">Fail over to the other provider</span>
+                  <span className="max-w-[70ch] text-[13.5px] leading-relaxed text-muted-3">
+                    If a Claude call fails with a rate limit, timeout or server error, retry that step on OpenAI (and the other way
+                    round). Both keys must be set under Connections.
+                  </span>
+                </span>
+              </label>
+
+              <div className="overflow-hidden rounded-[10px] border border-line-soft">
+                <div className="border-b border-line-soft">
+                  <Tabs
+                    tabs={groups.map((pg, i) => ({ k: String(i), label: pg.title }))}
+                    active={String(Math.min(group, groups.length - 1))}
+                    onSelect={(k) => onGroup(Number(k))}
+                  />
+                </div>
+                <div className="p-4">
+                  {g.rows.length === 0 ? (
+                    <div className="text-[14px] leading-relaxed text-muted-3">{g.missing ?? 'Nothing configured.'}</div>
+                  ) : (
+                    <FieldRows prefix={`project.${project.id}.${g.title}`} rows={g.rows} />
+                  )}
+                </div>
+              </div>
             </div>
-          ) : (
-            <FieldRows prefix={`project.${project.id}.${g.title}`} rows={g.rows} />
-          )}
+          ) : null}
         </div>
-      </div>
+      </section>
     </div>
   );
 }
