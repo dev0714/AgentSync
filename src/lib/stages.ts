@@ -330,7 +330,7 @@ function attachmentLine(a: AttachmentTerms | undefined): string[] {
 /**
  * The words to search the code with: the request without the source system's
  * footer ("Ticket TK-1 · New Request · Acme"), in ordinary case, plus what the
- * attachments show.
+ * attachments show and any answer given when a plan was sent back.
  */
 function requestSearchText(job: Job, a: AttachmentTerms | null): string {
   const body = `${job.task.title}\n${job.task.description ?? ''}`
@@ -339,7 +339,9 @@ function requestSearchText(job: Job, a: AttachmentTerms | null): string {
     .join('\n')
     .replace(/^[A-Z]{2,}-\d+:\s*/, '');
   const extra = a ? [a.screen, ...a.labels, ...a.fields, ...a.terms].join('\n') : '';
-  return `${body}\n${extra}`.toLowerCase();
+  // A person's answer when they sent a plan back often names the screen or file.
+  const answers = (job.feedback ?? []).filter((f) => f.gate === 'plan' && f.comments).map((f) => f.comments).join('\n');
+  return `${body}\n${extra}\n${answers}`.toLowerCase();
 }
 
 async function analyse(job: Job): Promise<Outcome> {

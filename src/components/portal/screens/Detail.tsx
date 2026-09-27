@@ -754,9 +754,9 @@ function GateBanner({
         </div>
         <p className="m-0 text-[14px] leading-relaxed text-ink-3">
           {nothingToBuild
-            ? 'It may already be done, or the request may need more detail. Answer the Planner and it will plan again, or reject the task if nothing is needed.'
+            ? 'It may already be done, or the request may need more detail. Answer the Planner (naming the screen or file helps most) and it will re-read the code and plan again, or reject the task if nothing is needed.'
             : gate === 'plan'
-            ? 'No code is written until the plan is approved. Approving starts the Engineer. Asking for changes sends your note back to the Planner, who writes a new version.'
+            ? 'No code is written until the plan is approved. Approving starts the Engineer. Asking for changes re-reads the code with your note and the Planner writes a new version.'
             : gate === 'merge'
               ? 'The checks and the review are below. Approving merges the pull request and releases it. Asking for changes sends your note back to the Engineer.'
               : body}
