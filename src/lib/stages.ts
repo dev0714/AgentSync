@@ -414,6 +414,26 @@ async function analyse(job: Job): Promise<Outcome> {
   return { to: 'planning' };
 }
 
+/**
+ * Work already on the task's branch from an earlier attempt: the new plan
+ * builds on it, so it should list those files too (or say to revert them).
+ */
+async function existingBranchWork(job: Job): Promise<string> {
+  const r = repoOf(job);
+  const client = await gh(job);
+  const branch = branchFor(job);
+  if (!(await branchSha(client, r, branch))) return '';
+  const files = await changedFiles(client, r, branch);
+  if (!files.length) return '';
+  return [
+    `<existing_branch branch="${branch}">`,
+    'An earlier attempt at this task already changed these files on its branch (against the default branch):',
+    ...files.map((f) => `- ${f.filename} (+${f.additions} −${f.deletions})`),
+    '</existing_branch>',
+    'The Engineer builds on this branch. List every one of these files in affected_files that should stay changed; for any that should not, include it and say in the steps to revert it.',
+  ].join('\n');
+}
+
 /* ---- planning: the Planner writes the plan ----------------------------- */
 
 const PLAN_SCHEMA = {
@@ -451,10 +471,12 @@ async function plan(job: Job): Promise<Outcome> {
   };
   const memory = renderMemoryBlock(await recall(job.task.project_id, null, 25));
   const agent = await loadAgent(job.task.id, 'planner');
+  const onBranch = await existingBranchWork(job).catch(() => '');
 
   const prompt = [
     taskBrief(job),
     humanFeedback(job),
+    onBranch,
     memory,
     `<repository_paths count="${context.total_paths ?? context.paths.length}">\n${context.paths.join('\n')}\n</repository_paths>`,
     ...Object.entries(context.files).map(([p, c]) => `<file path="${p}">\n${c}\n</file>`),
@@ -850,7 +872,19 @@ async function implementInSandbox(job: Job): Promise<Outcome> {
   const files = await changedFiles(client, r, branch);
   if (files.length === 0) throw new StageFailed('NO_CHANGES', `${branch} has no changes against ${r.defaultBranch}`);
 
-  const outside = files.filter((f) => !planned.includes(f.filename) || isProtected(job, f.filename) || !isAllowed(job, f.filename));
+  // A retried or re-planned task builds on its existing branch, which may hold
+  // files an earlier approved plan listed; and a new test for the change is
+  // always welcome. Anything else outside the plan is still refused.
+  const earlier = await earlierPlanFiles(job.task.id);
+  const tolerated = (p: string) => earlier.has(p) || TEST_FILE.test(p);
+  const outside = files.filter((f) =>
+    isProtected(job, f.filename) || !isAllowed(job, f.filename) || (!planned.includes(f.filename) && !tolerated(f.filename)));
+  const extra = files.filter((f) => !planned.includes(f.filename) && !outside.includes(f));
+  if (extra.length) {
+    await logEvent(job.task.id, 'guardrail.path_tolerated',
+      `Also on the branch, allowed: ${extra.map((f) => f.filename).join(', ')} (earlier approved plan or a test)`.slice(0, 1500),
+      { paths: extra.map((f) => f.filename) });
+  }
   if (outside.length) {
     await logEvent(job.task.id, 'guardrail.path_rejected',
       `The sandbox changed files outside the approved plan: ${outside.map((f) => f.filename).join(', ')}`,
@@ -934,6 +968,14 @@ function preExisting(
   if (baseline?.checks.some((b) => !b.passed && key(b).some((k) => key(c).includes(k)))) return true;
   const text = `${c.name ?? ''}\n${c.output_tail ?? ''}`;
   return /pre-?existing|identical (first )?(failures?|errors?)[^\n]*\bmain\b|same \d* ?failing|(also )?fails? (the same way )?on (main|master|the default branch)|no new errors|on both branch and main/i.test(text);
+}
+
+const TEST_FILE = /(^|\/)(tests?|__tests__|spec)\/|\.(test|spec)\.[cm]?[jt]sx?$/;
+
+/** Files any approved plan of this task listed — work already on its branch. */
+async function earlierPlanFiles(taskId: string): Promise<Set<string>> {
+  const { data } = await db().schema('agentsync').from('task_plans').select('affected_files').eq('task_id', taskId);
+  return new Set(((data ?? []) as { affected_files: string[] | null }[]).flatMap((p) => p.affected_files ?? []));
 }
 
 type Baseline = { commit_sha: string | null; checks: BaselineCheck[]; recorded_at: string };
