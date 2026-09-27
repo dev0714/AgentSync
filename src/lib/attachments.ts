@@ -326,8 +326,9 @@ export async function openaiParts(ctx: AiContext, attachments: Attachment[]): Pr
  */
 export async function claudeSandboxMounts(ctx: AiContext, attachments: Attachment[]) {
   const mounts: { type: 'file'; file_id: string; mount_path: string }[] = [];
-  for (const a of attachments) {
-    mounts.push({ type: 'file', file_id: await ensureAnthropicFile(ctx, a), mount_path: `/workspace/attachments/${safeName(a.filename)}` });
+  const names = mountNames(attachments);
+  for (const [i, a] of attachments.entries()) {
+    mounts.push({ type: 'file', file_id: await ensureAnthropicFile(ctx, a), mount_path: `/workspace/attachments/${names[i]}` });
   }
   return mounts;
 }
@@ -340,12 +341,34 @@ export async function openaiSandboxFileIds(ctx: AiContext, attachments: Attachme
 
 const safeName = (name: string) => name.replace(/[^A-Za-z0-9._-]+/g, '_') || 'file';
 
+/**
+ * One file name per attachment, unique within the task. Pasted screenshots all
+ * arrive as image.png, and two files mounted at the same path make the sandbox
+ * refuse the session — so later ones become image-2.png, image-3.png.
+ */
+export function mountNames(attachments: { filename: string }[]): string[] {
+  const used = new Set<string>();
+  return attachments.map((a) => {
+    const base = safeName(a.filename);
+    const dot = base.lastIndexOf('.');
+    const [stem, ext] = dot > 0 ? [base.slice(0, dot), base.slice(dot)] : [base, ''];
+    let name = base;
+    for (let n = 2; used.has(name.toLowerCase()); n++) name = `${stem}-${n}${ext}`;
+    used.add(name.toLowerCase());
+    return name;
+  });
+}
+
 export function sandboxAttachmentPrompt(attachments: Attachment[], where: 'claude' | 'openai'): string {
   if (attachments.length === 0) return '';
-  const lines = attachments.map((a) =>
-    where === 'claude'
-      ? `- /workspace/attachments/${safeName(a.filename)} (${a.media_type})`
-      : `- ${a.filename} (${a.media_type}) — in the container's uploaded files (look under /mnt/data if unsure)`);
+  const names = mountNames(attachments);
+  const seen = new Map<string, number>();
+  const lines = attachments.map((a, i) => {
+    if (where === 'claude') return `- /workspace/attachments/${names[i]} (${a.media_type})`;
+    const n = (seen.get(a.filename) ?? 0) + 1;
+    seen.set(a.filename, n);
+    return `- ${a.filename}${n > 1 ? ` (${n})` : ''} (${a.media_type}) — in the container's uploaded files (look under /mnt/data if unsure)`;
+  });
   const texts = attachments.filter((a) => !nativeToModel(a) && a.extracted_text).map(textBlock);
   return [`<attachments>\n${ATTACHMENT_NOTE}\n${lines.join('\n')}\n</attachments>`, ...texts].join('\n\n');
 }
