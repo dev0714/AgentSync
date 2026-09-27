@@ -13,7 +13,7 @@ import {
   statusLabel,
   swatch,
 } from '@/lib/portal-ui';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Ago, ColLabel, Empty, Pill, Segmented, TableCard } from '../ui';
 
 const GATE_NAME: Record<string, string> = {
@@ -37,55 +37,186 @@ const GATE_CTA: Record<string, string> = {
   information: 'Answer',
 };
 
+type HistoryRow = {
+  id: string;
+  task_id: string;
+  reference: string;
+  title: string;
+  status: string;
+  gate: string;
+  decision: 'approved' | 'changes_requested' | 'rejected' | string;
+  decided_by_email: string | null;
+  comments: string | null;
+  requested_at: string;
+  decided_at: string | null;
+  project: string | null;
+};
+
+type DecisionFilter = 'all' | 'approved' | 'changes_requested' | 'rejected';
+
+const DECISION: Record<string, { label: string; tone: string }> = {
+  approved: { label: 'Approved', tone: 'bg-ok-tint text-ok-ink' },
+  changes_requested: { label: 'Changes requested', tone: 'bg-gate-tint text-gate-ink' },
+  rejected: { label: 'Rejected', tone: 'bg-danger-tint text-danger-ink' },
+};
+
+/** A ticket's number (TK-123) from its title, and the rest of the title. */
+function ticketOf(title: string, reference: string): { ref: string; title: string } {
+  const m = /^\s*([A-Z][A-Z0-9]*-\d+)\s*[:\-–—]?\s*(.*)$/.exec(title);
+  if (m) return { ref: m[1], title: m[2] || title };
+  return { ref: reference.length > 12 ? reference.slice(0, 8) : reference, title };
+}
+
+/** How long a decision took, in words: "4 min", "2 h 5 min", "3 days". */
+function waited(from: string, to: string | null): string {
+  if (!to) return '';
+  const m = Math.max(0, Math.round((Date.parse(to) - Date.parse(from)) / 60000));
+  if (m < 1) return 'under a minute';
+  if (m < 60) return `${m} min`;
+  if (m < 60 * 24) return `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ''}`;
+  const d = Math.round(m / (60 * 24));
+  return `${d} day${d === 1 ? '' : 's'}`;
+}
+
 export function Approvals({
   approvals,
+  tenantSlug,
   onOpen,
 }: {
   approvals: ApprovalRow[];
+  tenantSlug: string | null;
   onOpen: (taskId: string) => void;
 }) {
-  if (approvals.length === 0) {
-    return (
-      <Empty
-        title="Nothing needs a decision"
-        detail="Tasks appear here when they reach a point your projects hold for a person: the plan, the merge or the release. Nothing is waiting right now."
-        table="agentsync.task_approvals"
-      />
-    );
-  }
+  return (
+    <div className="flex flex-col gap-6">
+      {approvals.length === 0 ? (
+        <Empty
+          title="Nothing needs a decision"
+          detail="Tasks appear here when they reach a point your projects hold for a person: the plan, the merge or the release. Nothing is waiting right now."
+        />
+      ) : (
+        <div className="flex flex-col gap-3">
+          <p className="m-0 text-[14px] leading-relaxed text-muted-3">
+            Nothing here has reached your default branch or production. Each task waits until someone decides.
+          </p>
+          {approvals.map((ap) => (
+            <div
+              key={ap.id}
+              className="card flex flex-col items-start gap-4 border-[var(--color-gate-line)] p-4 sm:p-5 lg:flex-row lg:items-center"
+            >
+              <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <span className="inline-flex h-[22px] items-center gap-1.5 rounded-[5px] bg-gate-tint px-2 text-[12px] font-semibold text-gate-ink">
+                    <span className="size-1.5 rounded-full bg-gate" />
+                    {GATE_NAME[ap.gate] ?? ap.gate}
+                  </span>
+                  <span className="mono text-[12.5px] text-muted-3">{ap.reference}</span>
+                  <span className="text-[12.5px] text-muted-3">
+                    {ap.project ? `${ap.project} · ` : ''}waiting <Ago iso={ap.requested_at} />
+                  </span>
+                </div>
+                <div className="text-[15.5px] leading-snug font-semibold">{ap.title}</div>
+                <div className="text-[13.5px] leading-normal text-ink-3">
+                  {GATE_DETAIL[ap.gate] ?? `Task status: ${ap.status}`}
+                </div>
+              </div>
+              <button className="btn-primary" onClick={() => onOpen(ap.task_id)}>
+                {GATE_CTA[ap.gate] ?? 'Review'}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <ApprovalHistory tenantSlug={tenantSlug} onOpen={onOpen} />
+    </div>
+  );
+}
+
+/** Every decision made so far: who decided what, when, how long it waited, and what they said. */
+function ApprovalHistory({ tenantSlug, onOpen }: { tenantSlug: string | null; onOpen: (taskId: string) => void }) {
+  const [rows, setRows] = useState<HistoryRow[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [filter, setFilter] = useState<DecisionFilter>('all');
+
+  useEffect(() => {
+    let live = true;
+    fetch(`/api/portal/approvals/history?tenant=${encodeURIComponent(tenantSlug ?? '')}`, { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((d: { history?: HistoryRow[] }) => { if (live) setRows(d.history ?? []); })
+      .catch(() => { if (live) setFailed(true); });
+    return () => { live = false; };
+  }, [tenantSlug]);
+
+  const count = (k: DecisionFilter) => (rows ?? []).filter((r) => k === 'all' || r.decision === k).length;
+  const shown = (rows ?? []).filter((r) => filter === 'all' || r.decision === filter);
 
   return (
-    <div className="flex flex-col gap-3">
-      <p className="m-0 text-[14px] leading-relaxed text-muted-3">
-        Nothing here has reached your default branch or production. Each task waits until someone decides.
-      </p>
-      {approvals.map((ap) => (
-        <div
-          key={ap.id}
-          className="card flex flex-col items-start gap-4 border-[var(--color-gate-line)] p-4 sm:p-5 lg:flex-row lg:items-center"
-        >
-          <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-            <div className="flex flex-wrap items-center gap-2.5">
-              <span className="inline-flex h-[22px] items-center gap-1.5 rounded-[5px] bg-gate-tint px-2 text-[12px] font-semibold text-gate-ink">
-                <span className="size-1.5 rounded-full bg-gate" />
-                {GATE_NAME[ap.gate] ?? ap.gate}
-              </span>
-              <span className="mono text-[12.5px] text-muted-3">{ap.reference}</span>
-              <span className="text-[12.5px] text-muted-3">
-                {ap.project ? `${ap.project} · ` : ''}waiting <Ago iso={ap.requested_at} />
-              </span>
-            </div>
-            <div className="text-[15.5px] leading-snug font-semibold">{ap.title}</div>
-            <div className="text-[13.5px] leading-normal text-ink-3">
-              {GATE_DETAIL[ap.gate] ?? `Task status: ${ap.status}`}
-            </div>
-          </div>
-          <button className="btn-primary" onClick={() => onOpen(ap.task_id)}>
-            {GATE_CTA[ap.gate] ?? 'Review'}
-          </button>
-        </div>
-      ))}
-    </div>
+    <section aria-labelledby="history-h" className="card overflow-hidden">
+      <div className="flex flex-wrap items-center gap-3 border-b border-line-soft px-5 py-3">
+        <h2 id="history-h" className="m-0 flex-1 text-[15px] font-semibold">History</h2>
+        {rows?.length ? (
+          <Segmented<DecisionFilter>
+            label="Decision"
+            value={filter}
+            onChange={setFilter}
+            options={[
+              { k: 'all', label: 'All', count: count('all') },
+              { k: 'approved', label: 'Approved', count: count('approved') },
+              { k: 'changes_requested', label: 'Changes requested', count: count('changes_requested') },
+              { k: 'rejected', label: 'Rejected', count: count('rejected') },
+            ]}
+          />
+        ) : null}
+      </div>
+      {failed ? (
+        <p className="m-0 px-5 py-4 text-[14px] text-muted-3">The history could not be loaded.</p>
+      ) : !rows ? (
+        <div className="m-5 h-[80px] animate-pulse rounded-md bg-line-faint" />
+      ) : !shown.length ? (
+        <p className="m-0 px-5 py-4 text-[14px] text-muted-3">
+          {rows.length ? 'No decisions of this kind yet.' : 'No decisions have been made yet. Each one is recorded here once someone decides.'}
+        </p>
+      ) : (
+        <ul className="m-0 list-none p-0">
+          {shown.map((h) => {
+            const k = ticketOf(h.title, h.reference);
+            const d = DECISION[h.decision] ?? { label: statusLabel(h.decision), tone: 'bg-line-soft text-ink-2' };
+            return (
+              <li key={h.id} className="border-b border-line-faint last:border-0">
+                <button
+                  type="button"
+                  onClick={() => onOpen(h.task_id)}
+                  className="flex w-full cursor-pointer flex-col gap-1.5 px-5 py-3.5 text-left hover:bg-line-faint sm:flex-row sm:items-start sm:gap-4"
+                >
+                  <span className="flex w-[150px] shrink-0 flex-col gap-1">
+                    <span className={`inline-flex h-[22px] w-fit items-center rounded-[5px] px-2 text-[12px] font-semibold ${d.tone}`}>{d.label}</span>
+                    <span className="text-[12.5px] text-muted-3">{GATE_NAME[h.gate] ?? h.gate}</span>
+                  </span>
+                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <span className="flex flex-wrap items-baseline gap-x-2">
+                      <span className="mono text-[12.5px] font-semibold text-ink">{k.ref}</span>
+                      <span className="truncate text-[14px] font-medium text-ink">{k.title}</span>
+                    </span>
+                    <span className="text-[12.5px] text-muted-3">
+                      {[h.project, h.decided_by_email ? `by ${h.decided_by_email}` : null, h.decided_at ? `waited ${waited(h.requested_at, h.decided_at)}` : null]
+                        .filter(Boolean).join(' · ')}
+                    </span>
+                    {h.comments?.trim() ? (
+                      <span className="mt-1 border-l-2 border-line-strong pl-2.5 text-[13.5px] leading-relaxed whitespace-pre-line text-ink-2">
+                        {h.comments.trim().length > 400 ? `${h.comments.trim().slice(0, 400)}…` : h.comments.trim()}
+                      </span>
+                    ) : null}
+                  </span>
+                  <span className="shrink-0 text-[12.5px] text-muted-3 tabular-nums sm:text-right" title={h.decided_at ? clock(h.decided_at) : undefined}>
+                    {h.decided_at ? <><Ago iso={h.decided_at} /> ago</> : '—'}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
   );
 }
 

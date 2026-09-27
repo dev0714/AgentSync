@@ -265,6 +265,7 @@ export default function Portal({
             {screen === "approvals" ? (
               <Approvals
                 approvals={data.approvals}
+                tenantSlug={data.tenant?.slug ?? null}
                 onOpen={(id) => openTask(id, "plan")}
               />
             ) : null}
