@@ -132,15 +132,21 @@ function Hero() {
     <section className={`${wrap} flex flex-col gap-7 pt-12 pb-16 md:gap-8 md:pt-[72px] md:pb-[88px]`}>
       <a
         href="#maps"
-        className="fade-up inline-flex min-h-[36px] flex-wrap items-center gap-2.5 self-start rounded-full border border-line bg-card py-1 pr-4 pl-1 text-[13.5px] text-ink-2 no-underline hover:text-ink"
+        className="fade-up inline-flex min-h-[36px] items-center gap-2.5 self-start rounded-2xl border border-line bg-card py-1 pr-3.5 pl-1 text-[13.5px] leading-snug text-ink-2 no-underline hover:text-ink sm:rounded-full sm:pr-4"
       >
-        <span className="rounded-full bg-accent px-2.5 py-1 text-[12px] font-semibold text-white">New</span>
-        {whatsNew.join(' · ')}
-        <Icon name="arrow" size={15} stroke={2} />
+        <span className="shrink-0 rounded-full bg-accent px-2.5 py-1 text-[12px] font-semibold text-white">New</span>
+        <span className="min-w-0">
+          <span className="sm:hidden">
+            {whatsNew[0]} and {whatsNew.length - 1} more updates
+          </span>
+          <span className="hidden sm:inline">{whatsNew.join(' · ')}</span>
+          <Icon name="arrow" size={15} stroke={2} className="ml-1.5 inline-block align-[-2px]" />
+        </span>
       </a>
-      <span className="fade-up mono inline-flex h-[34px] items-center gap-2.5 self-start rounded-full border border-line bg-card px-3.5 text-[11px] tracking-[0.04em] text-ink-2 md:text-[12.5px]">
-        <span className="blink size-2 rounded-full bg-gate" />
-        MULTI-TENANT · HUMAN-GATED · AUDITED END TO END
+      <span className="fade-up mono inline-flex min-h-[34px] flex-wrap items-center gap-x-2.5 gap-y-1 self-start rounded-2xl border border-line bg-card px-3.5 py-1.5 text-[11px] tracking-[0.04em] text-ink-2 sm:rounded-full md:text-[12.5px]">
+        <span className="blink size-2 shrink-0 rounded-full bg-gate" />
+        <span className="sm:hidden">HUMAN-GATED · AUDITED</span>
+        <span className="hidden sm:inline">MULTI-TENANT · HUMAN-GATED · AUDITED END TO END</span>
       </span>
 
       <h1 className="display m-0 text-[46px] leading-[1] font-bold tracking-[-0.04em] sm:text-[64px] lg:text-[88px] lg:leading-[0.98]">
@@ -242,7 +248,7 @@ function HowItWorks() {
             A service desk, an intake form, a CRM, a cron job or another agent.
             One signed call — and a retry never creates a second task.
           </p>
-          <pre className="mono m-0 mt-2 overflow-x-auto rounded-2xl bg-night p-5 text-[12.5px] leading-[1.75] text-[#c9c6bd]">
+          <pre className="mono m-0 mt-2 overflow-x-auto rounded-2xl bg-night p-4 text-[11.5px] leading-[1.75] text-[#c9c6bd] sm:p-5 sm:text-[12.5px]">
             {'POST /api/v1/agent/tasks\n'}
             <span className="text-[#8e9098]">{'Authorization: Bearer ask_live_…\n'}</span>
             {'{\n  "idempotency_key": '}
@@ -359,7 +365,7 @@ function WhatComesBack() {
               <span className="mono text-[13.5px] break-all">ai/ticket-1045-status-filter</span>
             </Row>
             <Row label="Files">
-              <span>6 changed</span>
+              <span className="whitespace-nowrap">6 changed</span>
               <span className="mono ml-3 text-[13.5px] text-ok">+148</span>
               <span className="mono ml-2 text-[13.5px] text-danger">−23</span>
             </Row>
@@ -387,9 +393,11 @@ function WhatComesBack() {
             className="chip flex flex-wrap items-center gap-3 border-t border-gate bg-gate-tint px-6 py-4.5"
             style={cssVar(1200)}
           >
-            <span className="blink size-2.5 rounded-full bg-gate" />
-            <span className="font-semibold text-gate-ink">Awaiting merge approval</span>
-            <div className="flex-1" />
+            <span className="flex items-center gap-2.5">
+              <span className="blink size-2.5 shrink-0 rounded-full bg-gate" />
+              <span className="font-semibold text-gate-ink">Awaiting merge approval</span>
+            </span>
+            <div className="hidden flex-1 sm:block" />
             <span className="text-[14px] text-ink-3">Held for a human. Nothing merged.</span>
           </div>
         </div>
@@ -450,8 +458,8 @@ function Row({
 }) {
   return (
     <div className={`flex items-center gap-4 py-3 ${last ? '' : 'border-b border-line-faint'}`}>
-      <dt className="w-[110px] shrink-0 text-muted-2">{label}</dt>
-      <dd className="m-0 flex min-w-0 items-center">{children}</dd>
+      <dt className="w-[84px] shrink-0 text-muted-2 sm:w-[110px]">{label}</dt>
+      <dd className="m-0 flex min-w-0 flex-wrap items-center gap-y-1">{children}</dd>
     </div>
   );
 }
@@ -524,9 +532,9 @@ function CodeMaps() {
               {impact.map((it) => (
                 <li
                   key={it.name}
-                  className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line-faint px-4 py-3 last:border-b-0"
+                  className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-line-faint px-4 py-3 last:border-b-0"
                 >
-                  <span className="mono min-w-0 flex-1 text-[13.5px] break-all">{it.name}</span>
+                  <span className="mono w-full min-w-0 text-[13px] [overflow-wrap:anywhere] sm:w-auto sm:flex-1 sm:text-[13.5px]">{it.name}</span>
                   <span className="mono hidden text-[12.5px] text-muted-2 sm:inline">{it.where}</span>
                   <span className={`rounded-full px-2.5 py-0.5 text-[12px] font-semibold ${IMPACT_TONE[it.tone]}`}>
                     {it.tag}
@@ -617,15 +625,15 @@ function ServiceDesk() {
           </div>
           <div className="rv flex flex-col gap-3 rounded-3xl border border-line bg-card p-6" style={cssVar(240)}>
             <span className={eyebrow}>BACK ON THE TICKET</span>
-            <div className="chip flex flex-wrap items-start gap-3" style={cssVar(500)}>
+            <div className="chip flex flex-col items-start gap-1.5 sm:flex-row sm:gap-3" style={cssVar(500)}>
               <span className="rounded-full bg-canvas-alt px-2.5 py-0.5 text-[12px] font-semibold">Internal note</span>
-              <span className="min-w-0 flex-1 text-[15px] leading-[1.5] text-ink-3">
+              <span className="min-w-0 text-[15px] leading-[1.5] text-ink-3 sm:flex-1">
                 Plan approved. Pull request #45 opened; all checks passed.
               </span>
             </div>
-            <div className="chip flex flex-wrap items-start gap-3" style={cssVar(750)}>
+            <div className="chip flex flex-col items-start gap-1.5 sm:flex-row sm:gap-3" style={cssVar(750)}>
               <span className="rounded-full bg-ok-tint px-2.5 py-0.5 text-[12px] font-semibold text-ok-ink">For the client</span>
-              <span className="min-w-0 flex-1 text-[15px] leading-[1.5] text-ink-3">
+              <span className="min-w-0 text-[15px] leading-[1.5] text-ink-3 sm:flex-1">
                 You can now filter the customer dashboard by status. It&apos;s live today.
               </span>
             </div>
@@ -678,7 +686,7 @@ function PortalShot({ mode }: { mode: 'light' | 'dark' }) {
             <span className="mono hidden text-[11.5px] sm:inline" style={{ color: p.muted }}>
               {r.id}
             </span>
-            <span className="min-w-0 flex-1 truncate text-[13.5px]">{r.title}</span>
+            <span className="line-clamp-2 min-w-0 flex-1 text-[13px] leading-snug sm:text-[13.5px]">{r.title}</span>
             <span
               className="shrink-0 rounded-full px-2.5 py-0.5 text-[11.5px] font-semibold"
               style={{ background: p[r.tone][0], color: p[r.tone][1] }}

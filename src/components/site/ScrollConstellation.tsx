@@ -76,6 +76,11 @@ export default function ScrollConstellation() {
 
     const draw = (now: number) => {
       const vh = window.innerHeight;
+      // Phones have no side margins: anything drawn would sit behind the text.
+      if (window.innerWidth < 768) {
+        ctx.clearRect(0, 0, window.innerWidth, vh);
+        return;
+      }
       const scroll = window.scrollY;
       const shift = scroll * k; // the map trails the page by this much
       const toScreen = (y: number) => y - scroll + shift;
@@ -154,5 +159,5 @@ export default function ScrollConstellation() {
     };
   }, []);
 
-  return <canvas ref={ref} aria-hidden className="pointer-events-none fixed inset-0 z-0 h-screen w-screen" />;
+  return <canvas ref={ref} aria-hidden className="pointer-events-none fixed inset-0 z-0 hidden h-screen w-screen md:block" />;
 }
