@@ -486,6 +486,19 @@ export async function loadCodeGraph(projectId: string): Promise<CodeGraph | null
 export type Hub = { id: string; label: string; degree: number; source_file: string | null };
 
 /** The most-connected code (`graphify god-nodes`), without package references. */
+const IMPORT_RELATIONS = new Set(['imports', 'imports_from', 'dynamic_import', 're_exports']);
+
+/**
+ * A package the code imports (react, next, lucide-react) rather than code of
+ * the project's own: only ever the target of imports, with nothing inside it.
+ * Hugely connected, but changing a file that imports it changes nothing about it.
+ */
+function isExternalModule(g: CodeGraph, id: string): boolean {
+  if ((g.out.get(id) ?? []).length > 0) return false;
+  const incoming = g.in.get(id) ?? [];
+  return incoming.length > 0 && incoming.every((e) => IMPORT_RELATIONS.has(e.relation));
+}
+
 export async function projectHubs(projectId: string, graph?: CodeGraph | null): Promise<Hub[]> {
   const raw = await readMapFile(projectId, 'hubs.json').catch(() => null);
   if (!raw) return [];
@@ -493,7 +506,7 @@ export async function projectHubs(projectId: string, graph?: CodeGraph | null): 
     const g = graph === undefined ? await loadCodeGraph(projectId) : graph;
     return (JSON.parse(raw.toString('utf8')) as { id: string; label: string; degree: number }[])
       .map((h) => ({ ...h, source_file: g?.nodes.get(h.id)?.source_file ?? null }))
-      .filter((h) => h.source_file);
+      .filter((h) => h.source_file && !(g && isExternalModule(g, h.id)));
   } catch {
     return [];
   }

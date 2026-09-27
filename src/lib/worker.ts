@@ -87,7 +87,11 @@ export async function tick(workerId: string): Promise<TickResult> {
           : (error as { code?: string }).code && typeof (error as { code?: string }).code === 'string'
             && /^[A-Z_]+$/.test((error as { code: string }).code) ? (error as { code: string }).code
           : 'STAGE_FAILED';
-        const detail = error instanceof Error ? error.message : String(error);
+        // Database errors arrive as plain objects ({ message, code, details }), not Errors.
+        const e = error as { message?: unknown; details?: unknown; hint?: unknown };
+        const detail = error instanceof Error ? error.message
+          : typeof e?.message === 'string' ? [e.message, e.details, e.hint].filter((x) => typeof x === 'string' && x).join(' — ')
+          : typeof error === 'string' ? error : JSON.stringify(error);
         console.error(`stage ${from} failed for ${taskId}`, error);
 
         // Fail the task with the reason on record, rather than leaving it to
