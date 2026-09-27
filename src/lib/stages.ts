@@ -483,6 +483,7 @@ async function plan(job: Job): Promise<Outcome> {
     `<repository_paths count="${context.total_paths ?? context.paths.length}">\n${context.paths.join('\n')}\n</repository_paths>`,
     ...Object.entries(context.files).map(([p, c]) => `<file path="${p}">\n${c}\n</file>`),
     'Write the implementation plan. List in affected_files every path you expect to create, modify or delete — the Engineer may only touch those paths.',
+    'If the change needs a database change, list its own .sql file under the project\'s migration folder (supabase/migrations, migrations or scripts) in affected_files; it runs on the database at the merge approval, before the code merges.',
     `Never plan changes to protected paths: ${(job.repository?.protected_paths ?? []).join(', ') || 'none'}.`,
   ].filter(Boolean).join('\n\n');
 
@@ -1073,6 +1074,37 @@ async function resumeLastSession(job: Job, ctx: AiContext, branch: string): Prom
   return true;
 }
 
+/** A file as it is on the task's branch now (for running its SQL from the merge approval). */
+export async function readTaskBranchFile(taskId: string, path: string): Promise<string | null> {
+  const job = await loadJob(taskId);
+  const client = await gh(job);
+  return readFile(client, repoOf(job), path, job.task.branch_name ?? branchFor(job));
+}
+
+/**
+ * The SQL this change carries under the project's migration paths. Each is
+ * recorded against the task; the merge waits until every one has been run on
+ * the database or marked as applied. A script that changes goes back to
+ * pending.
+ */
+async function recordDbChanges(job: Job, client: Octokit, r: Repo): Promise<string[]> {
+  const { data } = await db().rpc('agentsync_task_database', { p_task_id: job.task.id });
+  const cfg = (data ?? {}) as { migration_paths?: string[] | null };
+  const patterns = cfg.migration_paths?.length ? cfg.migration_paths : ['supabase/migrations/**', 'migrations/**', 'db/migrations/**', 'scripts/**/*.sql', 'sql/**/*.sql'];
+  const files = await changedFiles(client, r, job.task.branch_name ?? branchFor(job));
+  const sql = files.filter((f) => f.status !== 'removed' && f.filename.endsWith('.sql') && patterns.some((p) => globMatch(p, f.filename)));
+  await db().rpc('agentsync_db_changes_record', {
+    p_task_id: job.task.id,
+    p_changes: sql.map((f) => ({ path: f.filename, sha: f.sha ?? null })),
+  });
+  if (sql.length) {
+    await logEvent(job.task.id, 'db.change_detected',
+      `This change needs a database change: ${sql.map((f) => f.filename).join(', ')}. The merge waits until it has run on the database.`,
+      { paths: sql.map((f) => f.filename) });
+  }
+  return sql.map((f) => f.filename);
+}
+
 /**
  * The project's size limits, on the code the change touches. Tests don't
  * count: a thorough test makes a change easier to trust, not riskier. When
@@ -1422,6 +1454,10 @@ async function describePullRequest(job: Job): Promise<Outcome> {
     p_pr_url: job.task.pull_request_url,
   });
   const version = (reserved as { version?: string } | null)?.version ?? null;
+  const dbChanges = await recordDbChanges(job, client, r).catch((e) => {
+    console.error('could not record the database changes', e);
+    return [] as string[];
+  });
   const descriptionUpdate = String(st.description_update ?? '').trim();
   const branch = job.task.branch_name ?? branchFor(job);
   let docsNote = '';
@@ -1460,6 +1496,9 @@ async function describePullRequest(job: Job): Promise<Outcome> {
     '',
     ...(impactOf(job) ? ['### Impact (code map)', impactOf(job)!.text, ''] : []),
     ...(version ? [`### Release ${version}`, entry + docsNote, ''] : []),
+    ...(dbChanges.length
+      ? ['### Database changes', 'Run these before this merges — AgentSync holds the merge until each is applied:', ...dbChanges.map((p) => `- \`${p}\``), '']
+      : []),
     '---',
     'This pull request is merged by AgentSync only after a person approves it in the control plane.',
   ].join('\n');

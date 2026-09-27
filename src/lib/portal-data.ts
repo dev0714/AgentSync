@@ -432,6 +432,16 @@ export type TaskDetail = {
   report: Nullable<Record<string, unknown>>;
   security_findings: SecurityFinding[];
   events: TaskEvent[];
+  /** SQL scripts the change carries, which must run before it merges (added by the task API route). */
+  db_changes?: {
+    id: string;
+    path: string;
+    status: 'pending' | 'applied' | 'marked_applied' | 'failed';
+    applied_by_email: string | null;
+    applied_at: string | null;
+    output: string | null;
+  }[];
+  database?: { connected: boolean; project_ref: string | null };
   /** For a failed task: where it stopped, and whether Retry can resume the build. */
   retry?: { stage: string | null; plan_version: number | null; can_resume_build: boolean } | null;
   /** The Engineer's sandbox while it works (added by the task API route). */

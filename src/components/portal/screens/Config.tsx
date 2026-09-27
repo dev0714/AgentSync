@@ -18,6 +18,7 @@ import { TierPicker, useTierSettings, type EngineerMode, type Tier } from '../ti
 import { IssueKeyForm } from './SetupForms';
 import SourceClients from './SourceClients';
 import ProjectDocs, { type DocsTab } from './ProjectDocs';
+import ProjectDatabase from './ProjectDatabase';
 
 type ProjectTab = DocsTab | 'settings' | 'request';
 
@@ -361,6 +362,8 @@ export function Project_({
 
           {tab === 'settings' ? (
             <div className="flex flex-col gap-4">
+              <ProjectDatabase projectId={project.id} />
+
               <div className="flex flex-col gap-3 rounded-[10px] border border-line-soft p-5 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <div className="text-[15px] font-semibold text-ink">Default size</div>

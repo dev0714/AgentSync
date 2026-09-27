@@ -7,15 +7,17 @@ import DeploymentForm from './DeploymentForm';
 import GithubOneClick from './GithubOneClick';
 import GithubForm from './GithubForm';
 import SecretsForm from './SecretsForm';
+import SupabaseForm, { useSupabaseConnection } from './SupabaseForm';
 import WebhookForm from './WebhookForm';
 
-export type ConnTab = 'overview' | 'github' | 'deploy' | 'ai' | 'webhooks' | 'secrets';
+export type ConnTab = 'overview' | 'github' | 'deploy' | 'ai' | 'supabase' | 'webhooks' | 'secrets';
 
 export const CONN_TABS: { k: ConnTab; label: string }[] = [
   { k: 'overview', label: 'Overview' },
   { k: 'github', label: 'GitHub' },
   { k: 'deploy', label: 'Deployment' },
   { k: 'ai', label: 'AI providers' },
+  { k: 'supabase', label: 'Supabase' },
   { k: 'webhooks', label: 'Webhooks' },
   { k: 'secrets', label: 'Secrets' },
 ];
@@ -362,6 +364,7 @@ export default function Connections({
   onTab: (t: ConnTab) => void;
 }) {
   const { github, deployment, ai, secrets, webhooks } = connections;
+  const supabase = useSupabaseConnection(tenantSlug);
 
   // One card per external system: what it is for, whether it is connected,
   // the facts that matter, and the one thing to do next.
@@ -421,6 +424,19 @@ export default function Connections({
       rows: openai
         ? [['Key', ref(openai), true], ['Default model', String(openai.model ?? '—'), true]]
         : [['Used for', 'Taking over when Claude is busy, where projects allow it']],
+    },
+    {
+      mark: 'SB',
+      name: 'Supabase',
+      role: 'Runs a change’s database scripts before it merges',
+      tab: 'supabase',
+      state: supabase.connection ? 'connected' : 'optional',
+      rows: supabase.connection
+        ? [
+            ['Organisation', supabase.connection.organization ?? '—'],
+            ['Projects', `${supabase.connection.projects.length} reachable`],
+          ]
+        : [['Without it', 'Database changes are applied by hand, then marked as applied']],
     },
   ];
   const missing = cards.filter((c) => c.state === 'missing' && !(c.name === 'Anthropic' && openai));
@@ -559,6 +575,12 @@ export default function Connections({
           scope="ai_provider_credentials · one credential per provider"
         >
           <AiForm tenantSlug={tenantSlug} credentials={ai} />
+        </Card>
+      ) : null}
+
+      {tab === 'supabase' ? (
+        <Card title="Supabase" scope="tenant_supabase_connections · token stored encrypted">
+          <SupabaseForm tenantSlug={tenantSlug} conn={supabase} />
         </Card>
       ) : null}
 

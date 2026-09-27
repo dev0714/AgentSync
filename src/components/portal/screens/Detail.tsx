@@ -20,7 +20,7 @@ import {
 } from '@/lib/portal-ui';
 import { TierBadge } from '../tiers';
 import Attachments from './Attachments';
-import { Bar, CodeBlock, ColLabel, Pill, SectionTitle, Tabs } from '../ui';
+import { Ago, Bar, CodeBlock, ColLabel, Pill, SectionTitle, Tabs } from '../ui';
 
 export type DetailTab = 'plan' | 'diff' | 'checks' | 'request' | 'events';
 
@@ -242,8 +242,19 @@ export default function Detail({
         />
       ) : null}
 
+      {detail.db_changes?.length ? (
+        <DbChanges
+          taskId={task.id}
+          changes={detail.db_changes}
+          database={detail.database ?? { connected: false, project_ref: null }}
+          atMerge={task.status === 'awaiting_merge_approval'}
+          onChanged={() => setReload((n) => n + 1)}
+        />
+      ) : null}
+
       {banner ? (
         <GateBanner
+          dbPending={(detail.db_changes ?? []).filter((c) => c.status === 'pending' || c.status === 'failed').length}
           taskId={task.id}
           status={task.status}
           title={banner.title}
@@ -714,6 +725,7 @@ const DECISION_ERROR: Record<string, string> = {
   NOT_AUTHORISED: 'Your role cannot approve for this tenant. Ask a tenant admin or approver.',
   NOT_AT_GATE: 'This task has already moved on — refresh to see where it is.',
   COMMENT_REQUIRED: 'Say what should change before requesting changes.',
+  DB_CHANGES_PENDING: 'This change needs database changes applied first — run them or mark them as applied above.',
   NOTHING_TO_BUILD: 'This plan changes no files, so there is nothing to approve. Answer the Planner or reject the task.',
 };
 
@@ -730,8 +742,11 @@ function GateBanner({
   nothingToBuild = false,
   questions = [],
   summary = null,
+  dbPending = 0,
   onDecided,
 }: {
+  /** Database scripts still to run: the merge waits for them. */
+  dbPending?: number;
   taskId: string;
   status: string;
   title: string;
@@ -844,9 +859,19 @@ function GateBanner({
                 </button>
               ) : (
                 <>
-                  <button className="btn-primary" disabled={!!busy} onClick={() => decide('approved')}>
+                  <button
+                    className="btn-primary"
+                    disabled={!!busy || (gate === 'merge' && dbPending > 0)}
+                    title={gate === 'merge' && dbPending > 0 ? 'Run or mark the database changes above first' : undefined}
+                    onClick={() => decide('approved')}
+                  >
                     {busy === 'approved' ? 'Approving…' : gate === 'plan' ? 'Approve plan' : 'Approve and merge'}
                   </button>
+                  {gate === 'merge' && dbPending > 0 ? (
+                    <span className="text-[13px] text-gate-ink">
+                      {dbPending} database change{dbPending === 1 ? '' : 's'} to apply first
+                    </span>
+                  ) : null}
                   <button className="btn" disabled={!!busy} onClick={() => setAsking(true)}>
                     Request changes
                   </button>
@@ -864,6 +889,111 @@ function GateBanner({
           )}
         </div>
       ) : null}
+      {problem ? <div className="text-[13.5px] text-danger-ink">{problem}</div> : null}
+    </section>
+  );
+}
+
+const DB_ERROR: Record<string, string> = {
+  NOT_AUTHORISED: 'Only an approver or admin for this tenant can do this.',
+  NOT_CONNECTED: 'Supabase is not connected. Connect it under Connections → Supabase, or mark the script as applied.',
+  NO_PROJECT_LINKED: 'This project is not linked to a Supabase project. Link it in the project’s Settings → Database.',
+  SCRIPT_NOT_FOUND: 'The script is no longer on the branch.',
+};
+
+/**
+ * The SQL a change carries. Each script must run on the database before the
+ * change merges: through the Supabase connection, or by hand and then marked.
+ */
+function DbChanges({
+  taskId,
+  changes,
+  database,
+  atMerge,
+  onChanged,
+}: {
+  taskId: string;
+  changes: NonNullable<TaskDetail['db_changes']>;
+  database: NonNullable<TaskDetail['database']>;
+  atMerge: boolean;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const canRun = database.connected && !!database.project_ref;
+  const pending = changes.filter((c) => c.status === 'pending' || c.status === 'failed').length;
+
+  async function act(id: string, action: 'run' | 'mark_applied') {
+    if (action === 'run' && !window.confirm(`Run this script on Supabase project ${database.project_ref}? It changes the live database.`)) return;
+    if (action === 'mark_applied' && !window.confirm('Mark as already applied? Only do this if the script has been run on the live database.')) return;
+    setBusy(id + action);
+    setProblem(null);
+    try {
+      const res = await fetch(`/api/portal/tasks/${taskId}/db-changes/${id}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string; detail?: string };
+      if (!res.ok) setProblem(data.detail ?? DB_ERROR[data.error ?? ''] ?? `Could not do that (${data.error ?? res.status}).`);
+      onChanged();
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const tone = (s: string) =>
+    s === 'applied' || s === 'marked_applied'
+      ? 'bg-ok-tint text-ok-ink'
+      : s === 'failed'
+        ? 'bg-danger-tint text-danger-ink'
+        : 'bg-gate-tint text-gate-ink';
+  const word = (s: string) => (s === 'applied' ? 'Applied' : s === 'marked_applied' ? 'Marked applied' : s === 'failed' ? 'Failed' : 'To apply');
+
+  return (
+    <section aria-label="Database changes" className="card flex flex-col gap-3 px-5 py-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[15px] font-semibold text-ink">Database changes</span>
+        <span className="text-[13px] text-muted-3">
+          {pending
+            ? `Run before merging${canRun ? ` — on Supabase project ${database.project_ref}` : ''}`
+            : 'All applied'}
+        </span>
+      </div>
+      <ul className="m-0 flex list-none flex-col gap-2 p-0">
+        {changes.map((c) => (
+          <li key={c.id} className="flex flex-col gap-1.5 rounded-lg border border-line-soft px-3.5 py-2.5">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <span className="mono min-w-0 flex-1 text-[13px] [overflow-wrap:anywhere]">{c.path}</span>
+              <span className={`rounded-full px-2.5 py-0.5 text-[12px] font-semibold ${tone(c.status)}`}>{word(c.status)}</span>
+            </div>
+            {c.applied_by_email ? (
+              <span className="text-[12.5px] text-muted-3">
+                {word(c.status)} by {c.applied_by_email}
+                {c.applied_at ? <> · <Ago iso={c.applied_at} /></> : null}
+                {c.output ? <span className="mono"> · {c.output.slice(0, 160)}</span> : null}
+              </span>
+            ) : null}
+            {(c.status === 'pending' || c.status === 'failed') && atMerge ? (
+              <div className="flex flex-wrap items-center gap-2">
+                {canRun ? (
+                  <button className="btn-primary" disabled={!!busy} onClick={() => void act(c.id, 'run')}>
+                    {busy === c.id + 'run' ? 'Running…' : `Run on Supabase (${database.project_ref})`}
+                  </button>
+                ) : null}
+                <button className="btn" disabled={!!busy} onClick={() => void act(c.id, 'mark_applied')}>
+                  Mark as already applied
+                </button>
+                {!canRun ? (
+                  <span className="text-[12.5px] text-muted-3">
+                    {database.connected ? 'Link this project to a Supabase project to run it from here.' : 'Connect Supabase to run it from here.'}
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
+          </li>
+        ))}
+      </ul>
       {problem ? <div className="text-[13.5px] text-danger-ink">{problem}</div> : null}
     </section>
   );

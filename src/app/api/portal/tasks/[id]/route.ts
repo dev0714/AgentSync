@@ -52,5 +52,13 @@ export async function GET(
     retry = (data as { stage: string | null; plan_version: number | null; can_resume_build: boolean } | null) ?? null;
   }
 
-  return NextResponse.json({ ...detail, live, retry });
+  // Database scripts this change carries, and where they would run.
+  const [{ data: changes }, { data: dbCfg }] = await Promise.all([
+    serviceClient().rpc('agentsync_db_changes_for', { p_task_id: id }),
+    serviceClient().rpc('agentsync_task_database', { p_task_id: id }),
+  ]);
+  const cfg = (dbCfg ?? {}) as { token_reference?: string | null; supabase_project_ref?: string | null };
+  const database = { connected: Boolean(cfg.token_reference), project_ref: cfg.supabase_project_ref ?? null };
+
+  return NextResponse.json({ ...detail, live, retry, db_changes: changes ?? [], database });
 }

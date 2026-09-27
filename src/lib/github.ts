@@ -269,7 +269,7 @@ export async function installationToken(install: Installation | null): Promise<s
   return token;
 }
 
-export type ChangedFile = { filename: string; status: string; additions: number; deletions: number };
+export type ChangedFile = { filename: string; status: string; additions: number; deletions: number; sha?: string | null };
 
 /** Every file that differs between the default branch and `head`. */
 export async function changedFiles(gh: Octokit, r: Repo, head: string): Promise<ChangedFile[]> {
@@ -283,5 +283,6 @@ export async function changedFiles(gh: Octokit, r: Repo, head: string): Promise<
     status: f.status,
     additions: f.additions,
     deletions: f.deletions,
+    sha: f.sha ?? null,
   }));
 }
