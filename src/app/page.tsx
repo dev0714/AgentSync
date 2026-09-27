@@ -251,21 +251,24 @@ function HowItWorks() {
 
         <article className="rv lift flex flex-col gap-4 rounded-3xl border border-line bg-card p-7 md:p-8" style={cssVar(140)}>
           <span className="display text-[44px] leading-none font-bold text-accent">02</span>
-          <h3 className="m-0 text-[22px] leading-tight font-semibold md:text-[24px]">Five agents do the work</h3>
+          <h3 className="m-0 text-[22px] leading-tight font-semibold md:text-[24px]">Three agents do the work</h3>
           <p className="m-0 text-[16px] leading-[1.6] text-ink-3">
-            Each has one job, its own tools and its own limits. None of them can
-            approve its own output.
+            Each has one job, its own model and its own limits. None of them can
+            approve its own output — that is yours.
           </p>
           <ul className="m-0 mt-2 flex list-none flex-col rounded-2xl border border-line-soft p-0">
             {agents.map((a, i) => (
               <li
                 key={a.name}
-                className="flex items-center gap-3 border-b border-line-soft px-4.5 py-3.5 last:border-b-0"
+                className="flex items-start gap-3 border-b border-line-soft px-4.5 py-3.5 last:border-b-0"
               >
-                <span aria-hidden className="work size-2 rounded-full bg-accent" style={cssVar(i * 600)} />
-                <span className="text-[15px] font-semibold">{a.name}</span>
+                <span aria-hidden className="work mt-[7px] size-2 shrink-0 rounded-full bg-accent" style={cssVar(i * 1000)} />
+                <div className="flex min-w-0 flex-col gap-0.5">
+                  <span className="text-[15px] font-semibold">{a.name}</span>
+                  <span className="text-[13.5px] leading-[1.45] text-muted-2">{a.does}</span>
+                </div>
                 <div className="flex-1" />
-                <span className="mono text-[11.5px] text-muted-2">{a.out}</span>
+                <span className="mono mt-[3px] text-[11.5px] text-muted-2">{a.out}</span>
               </li>
             ))}
           </ul>

@@ -53,12 +53,11 @@ export const sources = [
   'Another agent',
 ];
 
+/** The three agents, in the order they work. Each hands the next one thing. */
 export const agents = [
-  { name: 'Orchestrator', out: 'STATE' },
-  { name: 'Planner', out: 'PLAN' },
-  { name: 'Coder', out: 'DIFF' },
-  { name: 'Reviewer', out: 'VERDICT' },
-  { name: 'Validator', out: 'CHECKS' },
+  { name: 'Planner', does: 'Reads the request and the code map, writes the plan', out: 'PLAN' },
+  { name: 'Engineer', does: 'Builds the approved plan in a sandbox, runs the checks', out: 'BRANCH' },
+  { name: 'Reviewer', does: 'Checks the diff against the plan and every criterion', out: 'VERDICT' },
 ];
 
 export const gates = [
