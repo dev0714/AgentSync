@@ -619,21 +619,13 @@ async function implement(job: Job): Promise<Outcome> {
   }
   if (writes.length === 0) throw new StageFailed('NO_CHANGES', 'the Engineer produced no change inside the approved plan');
 
-  const maxFiles = job.repository?.maximum_files_changed ?? 20;
-  if (writes.length > maxFiles) {
-    throw new StageFailed('CHANGE_LIMIT_EXCEEDED', `${writes.length} files changed; the limit is ${maxFiles}`);
-  }
 
   const deltas = writes.map((f) => {
     const before = current[f.path] ?? null;
     const after = f.action === 'delete' ? null : f.content;
     return { f, before, after, ...lineDelta(before, after) };
   });
-  const lines = deltas.reduce((n, d) => n + d.additions + d.deletions, 0);
-  const maxLines = job.repository?.maximum_lines_changed ?? 400;
-  if (lines > maxLines) {
-    throw new StageFailed('CHANGE_LIMIT_EXCEEDED', `${lines} lines changed; the limit is ${maxLines}`);
-  }
+  checkChangeLimits(job, deltas.map((d) => ({ filename: d.f.path, additions: d.additions, deletions: d.deletions })));
 
   const message = `${out.commit_message}\n\nAgentSync task ${reference(job)}`;
   const sha = await commitFiles(client, r, branch, message, deltas.map((d) => ({ path: d.f.path, content: d.after })));
@@ -891,11 +883,7 @@ async function implementInSandbox(job: Job): Promise<Outcome> {
       { paths: outside.map((f) => f.filename) });
     throw new StageFailed('OUTSIDE_PLAN', `changes outside the approved plan: ${outside.map((f) => f.filename).join(', ')} — no pull request was opened`);
   }
-  const maxFiles = job.repository?.maximum_files_changed ?? 20;
-  const lines = files.reduce((n, f) => n + f.additions + f.deletions, 0);
-  const maxLines = job.repository?.maximum_lines_changed ?? 400;
-  if (files.length > maxFiles) throw new StageFailed('CHANGE_LIMIT_EXCEEDED', `${files.length} files changed; the limit is ${maxFiles}`);
-  if (lines > maxLines) throw new StageFailed('CHANGE_LIMIT_EXCEEDED', `${lines} lines changed; the limit is ${maxLines}`);
+  checkChangeLimits(job, files);
 
   for (const f of files) {
     await serviceClient().rpc('agentsync_record_file_change', {
@@ -968,6 +956,30 @@ function preExisting(
   if (baseline?.checks.some((b) => !b.passed && key(b).some((k) => key(c).includes(k)))) return true;
   const text = `${c.name ?? ''}\n${c.output_tail ?? ''}`;
   return /pre-?existing|identical (first )?(failures?|errors?)[^\n]*\bmain\b|same \d* ?failing|(also )?fails? (the same way )?on (main|master|the default branch)|no new errors|on both branch and main/i.test(text);
+}
+
+/**
+ * The project's size limits, on the code the change touches. Tests don't
+ * count: a thorough test makes a change easier to trust, not riskier. When
+ * over, say which files made it big, so a person can judge.
+ */
+function checkChangeLimits(job: Job, files: { filename: string; additions: number; deletions: number }[]) {
+  const code = files.filter((f) => !TEST_FILE.test(f.filename));
+  const tests = files.filter((f) => TEST_FILE.test(f.filename));
+  const size = (f: { additions: number; deletions: number }) => f.additions + f.deletions;
+  const lines = code.reduce((n, f) => n + size(f), 0);
+  const testLines = tests.reduce((n, f) => n + size(f), 0);
+  const maxFiles = job.repository?.maximum_files_changed ?? 20;
+  const maxLines = job.repository?.maximum_lines_changed ?? 400;
+  const largest = [...code].sort((a, b) => size(b) - size(a)).slice(0, 4)
+    .map((f) => `${f.filename} +${f.additions} −${f.deletions}`).join(', ');
+  const tail = `${largest ? ` Largest: ${largest}.` : ''}${tests.length ? ` Tests (not counted): ${tests.length} file(s), ${testLines} lines.` : ''}`;
+  if (code.length > maxFiles) {
+    throw new StageFailed('CHANGE_LIMIT_EXCEEDED', `${code.length} files changed outside tests; the limit is ${maxFiles}.${tail}`);
+  }
+  if (lines > maxLines) {
+    throw new StageFailed('CHANGE_LIMIT_EXCEEDED', `${lines} lines changed outside tests; the limit is ${maxLines}.${tail}`);
+  }
 }
 
 const TEST_FILE = /(^|\/)(tests?|__tests__|spec)\/|\.(test|spec)\.[cm]?[jt]sx?$/;
