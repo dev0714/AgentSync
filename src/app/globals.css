@@ -524,6 +524,15 @@ a:hover {
   .marquee {
     animation: ags-marquee 42s linear infinite;
   }
+  .map-breathe {
+    animation: ags-breathe 6s ease-in-out infinite;
+  }
+  .map-flow {
+    animation: ags-flow 0.9s linear infinite;
+  }
+  .map-ping {
+    animation: ags-ping 1.6s cubic-bezier(0.2, 0.6, 0.3, 1) infinite;
+  }
 
   [data-anim] .rv .draw {
     transform-origin: left center;
@@ -648,6 +657,26 @@ a:hover {
   }
   100% {
     left: 83.333%;
+    opacity: 0;
+  }
+}
+@keyframes ags-breathe {
+  50% {
+    transform: scale(1.08);
+  }
+}
+@keyframes ags-flow {
+  to {
+    stroke-dashoffset: -14;
+  }
+}
+@keyframes ags-ping {
+  from {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  to {
+    transform: scale(2.6);
     opacity: 0;
   }
 }

@@ -9,28 +9,39 @@
 
 export const nav = [
   { href: '#how', label: 'How it works' },
+  { href: '#maps', label: 'Code maps' },
   { href: '#guardrails', label: 'Guardrails' },
   { href: '#integrations', label: 'Integrations' },
   { href: '#types', label: 'What to send it' },
 ];
 
-/** The hero pipeline. The sixth station is the human gate. */
-export type StationIcon = 'inbox' | 'plan' | 'code' | 'check' | 'eye' | 'person' | 'ship';
+/**
+ * The hero pipeline, in the order a request moves through it. The two
+ * "You decide" stations are the human gates; `ms` is how long the animation
+ * dwells on each, so the pause for a person is visibly longer.
+ */
+export type StationIcon = 'inbox' | 'map' | 'plan' | 'code' | 'eye' | 'person' | 'ship';
 
 export const stations: {
   name: string;
   text: string;
   icon: StationIcon;
-  kind: 'done' | 'gate' | 'next';
+  kind: 'agent' | 'gate' | 'ship';
+  isNew?: boolean;
+  ms: number;
 }[] = [
-  { name: 'Request', text: 'Sent from any system that can sign a call', icon: 'inbox', kind: 'done' },
-  { name: 'Plan', text: 'Reads the repository first, then writes a plan', icon: 'plan', kind: 'done' },
-  { name: 'Build', text: 'Changes the code on an isolated branch', icon: 'code', kind: 'done' },
-  { name: 'Check', text: 'Runs your lint, types, tests and build', icon: 'check', kind: 'done' },
-  { name: 'Review', text: 'Checks the diff against every criterion', icon: 'eye', kind: 'done' },
-  { name: 'You decide', text: 'Approve, ask for changes, or reject', icon: 'person', kind: 'gate' },
-  { name: 'Ship', text: 'Merges and deploys only after that', icon: 'ship', kind: 'next' },
+  { name: 'Request', text: 'Sent from any system that can sign a call', icon: 'inbox', kind: 'agent', ms: 1200 },
+  { name: 'Map', text: 'Finds the code the request is about', icon: 'map', kind: 'agent', isNew: true, ms: 1200 },
+  { name: 'Plan', text: 'Lists every file, and what the change affects', icon: 'plan', kind: 'agent', ms: 1200 },
+  { name: 'You decide', text: 'Approve the plan before anything is built', icon: 'person', kind: 'gate', ms: 2400 },
+  { name: 'Build', text: 'Changes the code on an isolated branch', icon: 'code', kind: 'agent', ms: 1400 },
+  { name: 'Check & review', text: 'Your checks, then the callers the map lists', icon: 'eye', kind: 'agent', ms: 1300 },
+  { name: 'You decide', text: 'Approve, ask for changes, or reject', icon: 'person', kind: 'gate', ms: 2400 },
+  { name: 'Ship', text: 'Merges, tags a release, writes the changelog', icon: 'ship', kind: 'ship', isNew: true, ms: 2800 },
 ];
+
+/** What's new, for the announcement line in the hero. */
+export const whatsNew = ['Code maps', 'One-click service desk connection', 'Releases and changelogs', 'Light and dark control plane'];
 
 /** Where work comes from — the marquee under the hero. */
 export const sources = [
@@ -56,11 +67,58 @@ export const gates = [
   { label: 'Approve production', on: true },
 ];
 
-export const evidence = [
-  'The plan it followed, and every assumption it made',
-  'Every command it ran, with the real exit code',
-  'A review verdict against each acceptance criterion',
+export const evidence: { text: string; isNew?: boolean }[] = [
+  { text: 'The plan it followed, and every assumption it made' },
+  { text: 'What the change affects, from the code map', isNew: true },
+  { text: 'Every command it ran, with the real exit code' },
+  { text: 'A review verdict against each acceptance criterion' },
+  { text: 'A release version and a changelog entry', isNew: true },
 ];
+
+/** The code maps section. */
+export const mapFeatures = [
+  {
+    title: 'Maps every project',
+    text: 'Graphify reads the repository and groups it into named parts — Invoices, Tickets, Auth — refreshed as changes merge.',
+  },
+  {
+    title: 'Finds the code a request is about',
+    text: 'Before planning, the agent searches the map for the functions and files the request touches, and routes it to the right repository.',
+  },
+  {
+    title: 'Shows what a change affects',
+    text: 'Every plan lists the callers the change reaches. Hubs — code much of the system depends on — are flagged before you approve.',
+  },
+  {
+    title: 'Learns from every task',
+    text: 'Useful hits, dead ends and your corrections are written back to the map, so the next request starts better informed.',
+  },
+];
+
+export const impact = [
+  { name: 'calculateTotals', where: 'invoices/totals.ts', tag: 'The change', tone: 'agent' },
+  { name: 'BillingService.fromTicket', where: 'invoices/billing.ts', tag: 'Hub', tone: 'gate' },
+  { name: 'TicketController.close', where: 'tickets/controller.ts', tag: 'Caller', tone: 'plain' },
+  { name: 'InvoiceMailer.send', where: 'email/invoice.ts', tag: 'Caller', tone: 'plain' },
+  { name: 'onMerge', where: 'hooks/merge.ts', tag: 'Caller', tone: 'plain' },
+] as const;
+
+/** The service desk section. */
+export const deskPoints = [
+  'Connect a service desk to a tenant in one click — no keys to copy',
+  'Map clients to repositories, or let AgentSync choose from the code maps',
+  'Internal notes on the ticket as the work moves',
+  'A plain-language note for the client when the change ships',
+];
+
+/** The control plane section. */
+export const portalRows = [
+  { id: 'TICKET-1045', title: 'Add a status filter to the dashboard', state: 'Plan approval', tone: 'gate' },
+  { id: 'TICKET-1042', title: 'Export customers to CSV', state: 'Merge approval', tone: 'gate' },
+  { id: 'TICKET-1039', title: 'Stop duplicate reminder emails', state: 'Agent working', tone: 'agent' },
+  { id: 'TICKET-1031', title: 'Invoices show VAT on its own line', state: 'Shipped · v2.14.0', tone: 'ok' },
+] as const;
+
 
 export const checks = ['lint', 'typecheck', 'tests · 1 repair', 'build'];
 
@@ -123,6 +181,18 @@ export const integrations: {
     text: 'Planning, implementation and review.',
     status: 'Primary model',
     tone: 'ok',
+  },
+  {
+    name: 'Graphify',
+    text: 'Code maps for every project: named parts, callers, impact and lessons learned.',
+    status: 'New',
+    tone: 'agent',
+  },
+  {
+    name: 'Service desks',
+    text: 'One-click connection per tenant, with notes back on the ticket and a note for the client.',
+    status: 'New',
+    tone: 'agent',
   },
   {
     name: 'OpenAI',
