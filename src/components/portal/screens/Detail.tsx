@@ -33,10 +33,10 @@ const TABS: { k: DetailTab; label: string }[] = [
 ];
 
 const ACTION_COLOUR: Record<string, string> = {
-  CREATED: '#17603C',
-  MODIFIED: '#963510',
-  DELETED: '#B42318',
-  RENAMED: '#0550C4',
+  CREATED: 'var(--color-ok-ink)',
+  MODIFIED: 'var(--color-gate-ink)',
+  DELETED: 'var(--color-danger)',
+  RENAMED: 'var(--color-agent-ink)',
 };
 
 function Rail({ title, children }: { title: string; children: React.ReactNode }) {
@@ -184,7 +184,7 @@ export default function Detail({
             ) : null}
           </div>
           <div
-            className="display text-[28px] leading-tight font-bold tracking-[-0.03em]"
+            className="display text-[24px] leading-tight font-semibold tracking-[-0.02em]"
             style={{ textWrap: 'pretty' }}
           >
             {task.title}
@@ -220,7 +220,7 @@ export default function Detail({
                   meta={`v${plan.version} · ${clock(plan.created_at)}`}
                   right={
                     plan.complexity ? (
-                      <Pill c={['#DDEFE3', '#17603C']}>
+                      <Pill c={['var(--color-ok-tint)', 'var(--color-ok-ink)']}>
                         COMPLEXITY: {plan.complexity.toUpperCase()}
                       </Pill>
                     ) : undefined
@@ -235,7 +235,7 @@ export default function Detail({
 
                 <div className="grid grid-cols-1 gap-[18px] lg:grid-cols-2">
                   <div>
-                    <div className="label mb-[9px]">IMPLEMENTATION STEPS</div>
+                    <div className="label mb-[9px]">Implementation steps</div>
                     <div className="flex flex-col gap-[7px]">
                       {steps.map((s, i) => (
                         <div key={i} className="flex items-baseline gap-[9px]">
@@ -255,7 +255,7 @@ export default function Detail({
                   <div className="flex flex-col gap-4">
                     {plan.assumptions?.length ? (
                       <div>
-                        <div className="label mb-[9px]">ASSUMPTIONS</div>
+                        <div className="label mb-[9px]">Assumptions</div>
                         <div className="flex flex-col gap-1.5">
                           {plan.assumptions.map((a) => (
                             <div
@@ -271,15 +271,15 @@ export default function Detail({
                     ) : null}
                     {plan.open_questions?.length ? (
                       <div>
-                        <div className="label mb-[9px]">OPEN QUESTIONS</div>
+                        <div className="label mb-[9px]">Open questions</div>
                         <div className="flex flex-col gap-1.5">
                           {plan.open_questions.map((q) => (
                             <div
                               key={q}
                               className="rounded-md border px-3 py-2 text-[13.5px] text-warn-2"
                               style={{
-                                borderColor: '#F0C9A8',
-                                background: '#FBE7DA',
+                                borderColor: 'var(--color-gate-line)',
+                                background: 'var(--color-gate-tint)',
                                 lineHeight: 1.5,
                               }}
                             >
@@ -291,7 +291,7 @@ export default function Detail({
                     ) : null}
                     {plan.rollback_plan ? (
                       <div>
-                        <div className="label mb-[9px]">ROLLBACK</div>
+                        <div className="label mb-[9px]">Rollback</div>
                         <div
                           className="text-[14px] text-muted"
                           style={{ lineHeight: 1.55 }}
@@ -332,7 +332,7 @@ export default function Detail({
                     >
                       <span
                         className="mono w-[70px] shrink-0 text-[11.5px]"
-                        style={{ color: ACTION_COLOUR[f.action] ?? '#5B5D66' }}
+                        style={{ color: ACTION_COLOUR[f.action] ?? 'var(--color-muted-2)' }}
                       >
                         {f.action}
                       </span>
@@ -359,7 +359,7 @@ export default function Detail({
                 {review ? (
                   <div className="mt-3.5 rounded-lg border border-line bg-raised p-3.5">
                     <div className="mb-2 flex items-center gap-2.5">
-                      <div className="label">REVIEW AGENT VERDICT</div>
+                      <div className="label">Reviewer’s verdict</div>
                       <Pill c={swatch(VERDICT_COLOUR, review.verdict)}>
                         {review.verdict}
                       </Pill>
@@ -375,7 +375,7 @@ export default function Detail({
 
                 {detail.security_findings.length > 0 ? (
                   <div className="mt-3.5 flex flex-col gap-1.5">
-                    <div className="label">SECURITY FINDINGS</div>
+                    <div className="label">Security findings</div>
                     {detail.security_findings.map((sf, i) => (
                       <div
                         key={i}
@@ -434,11 +434,11 @@ export default function Detail({
 
                 {buildOutput ? (
                   <div className="mt-3.5">
-                    <div className="label mb-2">SANITISED OUTPUT</div>
+                    <div className="label mb-2">Output (secrets removed)</div>
                     <CodeBlock
                       lines={buildOutput
                         .split('\n')
-                        .map((text) => ({ text, color: '#5B5D66' }))}
+                        .map((text) => ({ text, color: 'var(--color-muted-2)' }))}
                     />
                   </div>
                 ) : null}
@@ -449,14 +449,14 @@ export default function Detail({
           {tab === 'request' ? (
             <div className="grid grid-cols-1 gap-[18px] p-[18px] lg:grid-cols-2">
               <div>
-                <div className="label mb-2">ORIGINAL REQUEST</div>
+                <div className="label mb-2">Original request</div>
                 <div
                   className="mb-4 text-[15px] text-ink-3"
                   style={{ lineHeight: 1.6 }}
                 >
                   {task.description ?? 'No description was submitted.'}
                 </div>
-                <div className="label mb-2">ACCEPTANCE CRITERIA</div>
+                <div className="label mb-2">Acceptance criteria</div>
                 {task.acceptance_criteria?.length ? (
                   <div className="flex flex-col gap-1.5">
                     {task.acceptance_criteria.map((c) => (
@@ -476,7 +476,7 @@ export default function Detail({
                 )}
               </div>
               <div>
-                <div className="label mb-2">SUBMISSION</div>
+                <div className="label mb-2">Submission</div>
                 <CodeBlock
                   lines={JSON.stringify(
                     {
@@ -491,7 +491,7 @@ export default function Detail({
                     2,
                   )
                     .split('\n')
-                    .map((text) => ({ text, color: '#5B5D66' }))}
+                    .map((text) => ({ text, color: 'var(--color-muted-2)' }))}
                 />
               </div>
             </div>
@@ -501,7 +501,7 @@ export default function Detail({
             <div className="p-[18px]">
               <SectionTitle
                 title="Event log"
-                right={<Pill c={['#F0ECE3', '#5B5D66']}>APPEND-ONLY</Pill>}
+                right={<Pill c={['var(--color-line-faint)', 'var(--color-muted-2)']}>Entries can’t be changed</Pill>}
               />
               <div className="mt-3.5 flex flex-col">
                 {events.map((e, i) => (
@@ -540,7 +540,7 @@ export default function Detail({
         <div className="flex flex-col gap-4">
           <Attachments taskId={task.id} />
 
-          <Rail title="WHERE IT IS">
+          <Rail title="Details">
             {recent.length === 0 ? (
               <div className="text-[13.5px] text-muted">
                 No event has been recorded yet.
@@ -572,7 +572,7 @@ export default function Detail({
             )}
           </Rail>
 
-          <Rail title="PROGRESS">
+          <Rail title="Progress">
             <div className="mb-1.5 flex justify-between">
               <span className="text-[13px] text-muted">
                 {statusLabel(task.status)}
@@ -581,7 +581,7 @@ export default function Detail({
                 {percent(task.progress_percent)}
               </span>
             </div>
-            <Bar pct={percent(task.progress_percent)} color="#0B6BFF" />
+            <Bar pct={percent(task.progress_percent)} color="var(--color-accent)" />
             {task.error_code ? (
               <div className="mono mt-3 text-[12.5px] text-danger">
                 {task.error_code}
@@ -589,22 +589,22 @@ export default function Detail({
             ) : null}
           </Rail>
 
-          <Rail title="ARTEFACTS">
+          <Rail title="Artefacts">
             <div className="flex flex-col gap-2.5">
               <div>
-                <ColLabel>BRANCH</ColLabel>
+                <ColLabel>Branch</ColLabel>
                 <div className="mono break-all text-[12.5px] text-ink-2">
                   {task.branch_name ?? '—'}
                 </div>
               </div>
               <div>
-                <ColLabel>COMMIT</ColLabel>
+                <ColLabel>Commit</ColLabel>
                 <div className="mono break-all text-[12.5px] text-ink-2">
                   {task.commit_sha ?? '—'}
                 </div>
               </div>
               <div>
-                <ColLabel>PULL REQUEST</ColLabel>
+                <ColLabel>Pull request</ColLabel>
                 <div className="mono break-all text-[12.5px] text-accent">
                   {task.pull_request_url ?? '—'}
                 </div>
@@ -612,7 +612,7 @@ export default function Detail({
             </div>
           </Rail>
 
-          <Rail title="AI USAGE">
+          <Rail title="AI usage">
             <div className="flex flex-col gap-1.5">
               {[
                 ['Calls', String(usage.calls)],
@@ -632,7 +632,7 @@ export default function Detail({
           </Rail>
 
           {detail.approvals.length > 0 ? (
-            <Rail title="APPROVALS">
+            <Rail title="Approvals">
               <div className="flex flex-col gap-2">
                 {detail.approvals.map((a, i) => (
                   <div key={i} className="flex items-baseline justify-between gap-3">
@@ -720,11 +720,11 @@ function GateBanner({
   return (
     <div
       role="status"
-      className="flex flex-col gap-4 rounded-[18px] border border-[#F0C9A8] bg-gate-tint px-5 py-4"
+      className="flex flex-col gap-4 rounded-[10px] border border-[var(--color-gate-line)] bg-gate-tint px-5 py-4"
     >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <span className="pulse-ring relative flex size-9 shrink-0 items-center justify-center rounded-full bg-gate text-white">
-          <span className="size-2.5 rounded-full bg-white" />
+        <span className="pulse-ring relative flex size-9 shrink-0 items-center justify-center rounded-full bg-gate text-on-gate">
+          <span className="size-2.5 rounded-full bg-on-gate" />
         </span>
         <div className="min-w-0 flex-1">
           <div className="text-[15.5px] font-semibold text-gate-ink">{title}</div>

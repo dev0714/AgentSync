@@ -6,6 +6,7 @@ import type { Overview } from "@/lib/portal-data";
 import type { FilterKey } from "@/lib/portal-ui";
 import Icon from "@/components/site/Icon";
 import Sidebar from "./Sidebar";
+import ThemeToggle from "./ThemeToggle";
 import { FieldProvider } from "./ui";
 import Agents, { type AgentTab } from "./screens/Agents";
 import Connections, { type ConnTab } from "./screens/Connections";
@@ -31,31 +32,30 @@ export type Screen =
 const TITLES: Record<Screen, string> = {
   tasks: "Tasks",
   detail: "Task",
-  approvals: "Approvals queue",
+  approvals: "Approvals",
   deployments: "Deployments",
   audit: "Audit log",
-  project: "Project configuration",
+  project: "Projects",
   sources: "Source systems",
-  usage: "Usage & cost",
+  usage: "Usage and cost",
   connections: "Connections",
   agents: "Agents",
   tenants: "Tenants",
 };
 
+/** One plain line under each title: what the screen is for. */
 const CRUMBS: Record<Screen, string> = {
-  tasks: "agent_tasks",
-  detail: "agent_tasks · task_plans · task_file_changes · task_events",
-  approvals: "task_approvals",
-  deployments: "deployments",
-  audit: "task_events",
-  project:
-    "projects · project_repositories · project_runtime_configs · project_ai_configs",
-  sources: "source_systems",
-  usage: "task_ai_usage",
-  connections:
-    "github_app_installations · deployment_providers · ai_provider_credentials · secret_references",
-  agents: "agent_definitions · agent_ai_configs · agent_tools",
-  tenants: "tenants · tenant_users",
+  tasks: "Every request, where it is, and what it needs from you",
+  detail: "The plan, the changes, the checks and every step on record",
+  approvals: "Tasks wait here until a person decides",
+  deployments: "Every preview and production release, with the task behind it",
+  audit: "Everything that changed, who did it and when",
+  project: "Repositories, their description, releases and code map",
+  sources: "Systems that send work, and where their clients' requests go",
+  usage: "What the agents cost, by project and by agent",
+  connections: "The services AgentSync works through",
+  agents: "The agents that work every task, and the models they use",
+  tenants: "Every organisation on this AgentSync",
 };
 
 export type PortalUser = {
@@ -148,7 +148,7 @@ export default function Portal({
 
   return (
     <FieldProvider>
-      <div className="flex h-screen min-h-[720px] overflow-hidden bg-canvas text-ink">
+      <div className="portal-ui flex h-screen min-h-[720px] overflow-hidden bg-canvas text-ink">
         {/* Below lg the sidebar is a drawer opened from the header. */}
         <div
           className={`${navOpen ? "fixed inset-0 z-40 flex" : "hidden"} lg:static lg:flex`}
@@ -177,39 +177,43 @@ export default function Portal({
         </div>
 
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          <div className="flex h-[64px] shrink-0 items-center gap-3 border-b border-line-soft bg-canvas px-4 sm:px-6 lg:px-8">
+          <header className="flex h-[60px] shrink-0 items-center gap-3 border-b border-line-soft bg-card px-4 sm:px-6 lg:px-8">
             <button
               onClick={() => setNavOpen(true)}
               aria-label="Open menu"
-              className="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-line bg-card text-ink lg:hidden"
+              className="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-line-soft bg-card text-ink lg:hidden"
             >
               <Icon name="menu" size={18} />
             </button>
-            <h1 className="display truncate text-[20px] font-bold tracking-[-0.03em] sm:text-[22px]">
-              {TITLES[screen]}
-            </h1>
-            <div className="mono hidden truncate text-[12px] text-muted-3 xl:block">
-              {CRUMBS[screen]}
-            </div>
-            <div className="flex-1" />
-            {/* Blue means an agent is working — the same colour the
-                homepage uses for it. */}
-            <div className="flex shrink-0 items-center gap-2 rounded-full bg-agent-tint px-3 py-1.5 whitespace-nowrap">
-              <span className="blink size-2 rounded-full bg-accent" />
-              <span className="text-[13px] font-semibold text-agent-ink">
-                {data.metrics.in_flight} in flight
+            <div className="flex min-w-0 items-baseline gap-2.5">
+              <h1 className="m-0 truncate text-[16px] font-semibold tracking-[-0.01em]">
+                {TITLES[screen]}
+              </h1>
+              <span className="hidden truncate text-[13px] text-muted-3 xl:block">
+                {CRUMBS[screen]}
               </span>
             </div>
-          </div>
+            <div className="flex-1" />
+            {/* Blue means an agent is working. */}
+            {data.metrics.in_flight > 0 ? (
+              <div className="hidden shrink-0 items-center gap-2 rounded-md bg-agent-tint px-2.5 py-1 whitespace-nowrap sm:flex">
+                <span className="blink size-2 rounded-full bg-accent" />
+                <span className="text-[12.5px] font-medium text-agent-ink">
+                  {data.metrics.in_flight} in progress
+                </span>
+              </div>
+            ) : null}
+            <ThemeToggle />
+          </header>
 
           <div className="flex-1 overflow-y-auto px-4 pt-6 pb-12 sm:px-6 lg:px-8">
             {notice ? (
               <div
                 role="status"
-                className={`mb-5 flex items-start gap-3 rounded-[14px] border px-4 py-3 text-[14px] ${
+                className={`mb-5 flex items-start gap-3 rounded-[10px] border px-4 py-3 text-[14px] ${
                   notice.ok
-                    ? "border-[#BFDFCB] bg-ok-tint text-ok-ink"
-                    : "border-[#F0C9C4] bg-danger-tint text-danger-ink"
+                    ? "border-ok-line bg-ok-tint text-ok-ink"
+                    : "border-danger-line bg-danger-tint text-danger-ink"
                 }`}
               >
                 <span className="flex-1">{notice.text}</span>

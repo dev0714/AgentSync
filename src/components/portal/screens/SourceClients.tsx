@@ -177,10 +177,10 @@ export default function SourceClients({ sourceId, sourceName, tenantSlug }: {
 
           <div className="overflow-x-auto rounded-md border border-line">
             <div className="grid min-w-[860px] grid-cols-[minmax(200px,1fr)_minmax(400px,520px)_70px_100px] items-start gap-3 border-b border-line bg-raised px-3.5 py-[9px]">
-              <span className="label">CLIENT</span>
-              <span className="label">REPOSITORIES · WHAT EACH IS FOR</span>
-              <span className="label">TASKS</span>
-              <span className="label">LAST SEEN</span>
+              <span className="label">Client</span>
+              <span className="label">Repositories and what each is for</span>
+              <span className="label">Tasks</span>
+              <span className="label">Last seen</span>
             </div>
             {shown.map((c) => (
               <div

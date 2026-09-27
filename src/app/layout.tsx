@@ -26,6 +26,10 @@ export const metadata: Metadata = {
     'A development agent any system can call. It plans, builds and checks the change on an isolated branch — and nothing merges or deploys until the people you choose approve it.',
 };
 
+// Sets the control plane's theme before first paint, so a dark-theme reader
+// never sees a flash of light: the saved choice, else the system setting.
+const THEME_SCRIPT = `(function(){try{var t=localStorage.getItem('agentsync-theme');if(t!=='light'&&t!=='dark'){t=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'}document.documentElement.setAttribute('data-theme',t)}catch(e){document.documentElement.setAttribute('data-theme','light')}})();`;
+
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
@@ -33,7 +37,11 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${display.variable} ${sans.variable} ${mono.variable}`}
+      suppressHydrationWarning
     >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
       <body>{children}</body>
     </html>
   );

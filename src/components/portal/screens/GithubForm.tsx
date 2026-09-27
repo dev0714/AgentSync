@@ -248,7 +248,7 @@ export default function GithubForm({
       {error ? (
         <div
           className="rounded-lg border px-3.5 py-2.5 text-[14px] text-danger"
-          style={{ borderColor: '#F0C9C4', background: '#F8E0DD', lineHeight: 1.5 }}
+          style={{ borderColor: 'var(--color-danger-line)', background: 'var(--color-danger-tint)', lineHeight: 1.5 }}
           role="alert"
         >
           {error}

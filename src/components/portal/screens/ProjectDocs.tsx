@@ -51,17 +51,17 @@ const SOURCE_LABEL: Record<Version['source'], string> = {
   restore: 'Restored',
 };
 const SOURCE_COLOUR: Record<Version['source'], string> = {
-  repository: '#5f616a',
-  import: '#5f616a',
-  agent: '#0550c4',
-  person: '#1f7a4d',
-  restore: '#963510',
+  repository: 'var(--color-muted-3)',
+  import: 'var(--color-muted-3)',
+  agent: 'var(--color-agent-ink)',
+  person: 'var(--color-ok)',
+  restore: 'var(--color-gate-ink)',
 };
 const REPO_STATE: Record<string, { label: string; colour: string }> = {
-  in_sync: { label: 'In the repository', colour: '#1f7a4d' },
-  pr_open: { label: 'Waiting in a pull request', colour: '#963510' },
-  missing: { label: 'Not in the repository', colour: '#b42318' },
-  unknown: { label: 'Not checked yet', colour: '#5f616a' },
+  in_sync: { label: 'In the repository', colour: 'var(--color-ok)' },
+  pr_open: { label: 'Waiting in a pull request', colour: 'var(--color-gate-ink)' },
+  missing: { label: 'Not in the repository', colour: 'var(--color-danger)' },
+  unknown: { label: 'Not checked yet', colour: 'var(--color-muted-3)' },
 };
 
 type Tab = 'description' | 'history' | 'releases' | 'map';
@@ -243,7 +243,7 @@ export default function ProjectDocs({ projectId, tenantSlug, onOpenTask }: {
                     <> · <button className="underline decoration-line underline-offset-4 hover:decoration-ink" onClick={() => onOpenTask(current.task_id!)}>see the task</button></>
                   ) : null}
                 </span>
-                <Pill c={['#f3f0e8', state.colour]}>{state.label}</Pill>
+                <Pill c={['var(--color-canvas)', state.colour]}>{state.label}</Pill>
                 {doc?.repo_state === 'pr_open' && doc.pr_url ? (
                   <a href={doc.pr_url} target="_blank" rel="noreferrer" className="text-[13px] underline underline-offset-4">Open the pull request ↗</a>
                 ) : null}
@@ -297,7 +297,7 @@ export default function ProjectDocs({ projectId, tenantSlug, onOpenTask }: {
           <div className="flex flex-col gap-3">
             <div className="flex items-baseline gap-3">
               <span className="text-[13px] text-muted">Current version</span>
-              <span className="display text-[26px] font-bold tracking-[-0.02em]">{data.release_version ? `v${data.release_version}` : 'none yet'}</span>
+              <span className="display text-[24px] font-semibold tracking-[-0.02em]">{data.release_version ? `v${data.release_version}` : 'none yet'}</span>
             </div>
             <p className="m-0 max-w-[75ch] text-[13.5px] text-muted" style={{ lineHeight: 1.6 }}>
               Every pull request AgentSync prepares takes the next version (major, minor or patch, chosen by the Reviewer) and adds a
@@ -311,7 +311,7 @@ export default function ProjectDocs({ projectId, tenantSlug, onOpenTask }: {
                   <li key={r.version} className="rounded-md border border-line px-3.5 py-3">
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                       <span className="mono text-[14px] font-semibold">v{r.version}</span>
-                      <Pill c={r.status === 'released' ? ['#ddefe3', '#17603c'] : ['#fbe7da', '#963510']}>
+                      <Pill c={r.status === 'released' ? ['var(--color-ok-tint)', 'var(--color-ok-ink)'] : ['var(--color-gate-tint)', 'var(--color-gate-ink)']}>
                         {r.status === 'released' ? 'Released' : 'Waiting for merge'}
                       </Pill>
                       <span className="text-[12.5px] text-muted">{r.bump}</span>
@@ -377,7 +377,7 @@ function VersionView({ viewing, meta, isCurrent, busy, onBack, onRestore }: {
           {parts.map((p, i) => (
             <span
               key={i}
-              style={p.added ? { background: '#ddefe3', color: '#17603c' } : p.removed ? { background: '#fbe3e1', color: '#b42318', textDecoration: 'line-through' } : { color: '#4f515a' }}
+              style={p.added ? { background: 'var(--color-ok-tint)', color: 'var(--color-ok-ink)' } : p.removed ? { background: 'var(--color-danger-tint)', color: 'var(--color-danger)', textDecoration: 'line-through' } : { color: 'var(--color-muted)' }}
             >
               {p.value}
             </span>
@@ -489,8 +489,8 @@ function ProjectMap({ projectId, tenantSlug }: { projectId: string; tenantSlug: 
         ) : (
           <span className="text-[13px] text-ink-2">No map yet.</span>
         )}
-        {going ? <Pill c={['#fbe7da', '#963510']}>{map!.status === 'queued' ? 'Waiting to map' : 'Mapping…'}</Pill> : null}
-        {map?.status === 'failed' ? <Pill c={['#fbe3e1', '#b42318']}>Last run failed</Pill> : null}
+        {going ? <Pill c={['var(--color-gate-tint)', 'var(--color-gate-ink)']}>{map!.status === 'queued' ? 'Waiting to map' : 'Mapping…'}</Pill> : null}
+        {map?.status === 'failed' ? <Pill c={['var(--color-danger-tint)', 'var(--color-danger)']}>Last run failed</Pill> : null}
         <div className="ml-auto flex gap-2">
           <button className="btn min-h-[38px] px-3 text-[13.5px]" disabled={Boolean(busy) || going || !available} onClick={() => void run(false)}>
             {busy === 'one' ? 'Starting…' : hasMap ? 'Map again' : 'Map this project'}
@@ -508,7 +508,7 @@ function ProjectMap({ projectId, tenantSlug }: { projectId: string; tenantSlug: 
       ) : null}
       {notice ? <div className="rounded-md border border-line bg-raised px-3 py-2 text-[13.5px] text-ink-2">{notice}</div> : null}
       {map?.status === 'failed' && map.error ? (
-        <pre className="mono m-0 max-h-[180px] overflow-auto rounded-md border border-[#e7b8b2] bg-danger-tint p-3 text-[12px] whitespace-pre-wrap text-danger-ink">{map.error}</pre>
+        <pre className="mono m-0 max-h-[180px] overflow-auto rounded-md border border-[var(--color-danger-line)] bg-danger-tint p-3 text-[12px] whitespace-pre-wrap text-danger-ink">{map.error}</pre>
       ) : null}
       {labels === 'failed' ? (
         <div className="rounded-md border border-line bg-raised px-3 py-2 text-[13px] text-ink-2">
@@ -531,7 +531,7 @@ function ProjectMap({ projectId, tenantSlug }: { projectId: string; tenantSlug: 
                 key={v.key}
                 role="tab"
                 aria-selected={view === v.key}
-                className={`rounded-full border px-3 py-1 text-[13px] ${view === v.key ? 'border-ink bg-ink text-card' : 'border-line bg-card text-ink-2 hover:bg-raised'}`}
+                className={`rounded-md border px-3 py-1 text-[13px] ${view === v.key ? 'border-ink bg-ink text-card' : 'border-line bg-card text-ink-2 hover:bg-raised'}`}
                 onClick={() => setView(v.key)}
               >
                 {v.label}

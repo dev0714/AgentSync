@@ -56,7 +56,7 @@ export default function Attachments({ taskId }: { taskId: string }) {
 
   return (
     <div className="card p-4">
-      <div className="label mb-3">ATTACHMENTS</div>
+      <div className="label mb-3">Attachments</div>
       <ul className="flex flex-col gap-2.5">
         {items.map((a) => (
           <li key={a.id} className="flex flex-col gap-1">

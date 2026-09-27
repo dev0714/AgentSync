@@ -87,11 +87,11 @@ export default function SecretsForm({
       {secrets.length > 0 ? (
         <div className="overflow-x-auto rounded-lg border border-line">
           <div className={`${GRID} border-b border-line bg-raised px-3.5 py-[9px]`}>
-            <ColLabel>REFERENCE</ColLabel>
-            <ColLabel>USED BY</ColLabel>
-            <ColLabel>ROTATED</ColLabel>
-            <ColLabel>EVERY</ColLabel>
-            <ColLabel>STATE</ColLabel>
+            <ColLabel>Reference</ColLabel>
+            <ColLabel>Used by</ColLabel>
+            <ColLabel>Rotated</ColLabel>
+            <ColLabel>Every</ColLabel>
+            <ColLabel>State</ColLabel>
             <ColLabel right>{''}</ColLabel>
           </div>
           {secrets.map((s) => (
@@ -109,7 +109,7 @@ export default function SecretsForm({
               <span className="mono text-[12px] text-muted-2">
                 {s.rotation_days ?? '—'}d
               </span>
-              <Pill c={s.revoked ? ['#F8E0DD', '#B42318'] : ['#DDEFE3', '#17603C']}>
+              <Pill c={s.revoked ? ['var(--color-danger-tint)', 'var(--color-danger)'] : ['var(--color-ok-tint)', 'var(--color-ok-ink)']}>
                 {s.revoked ? 'REVOKED' : 'ACTIVE'}
               </Pill>
               <div className="flex justify-end gap-2.5">
@@ -150,7 +150,7 @@ export default function SecretsForm({
       ) : null}
 
       <form onSubmit={add} className="flex flex-col gap-4">
-        <div className="label">REGISTER A REFERENCE</div>
+        <div className="label">Register a reference</div>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           <Field
             label="reference"

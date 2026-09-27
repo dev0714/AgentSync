@@ -8,7 +8,6 @@ import type {
 import {
   DEPLOYMENT_STATUS_COLOUR,
   ENVIRONMENT_COLOUR,
-  GATE_COLOUR,
   clock,
   duration,
   eventColour,
@@ -16,11 +15,25 @@ import {
 } from '@/lib/portal-ui';
 import { Ago, ColLabel, Empty, Pill, TableCard } from '../ui';
 
+const GATE_NAME: Record<string, string> = {
+  plan: 'Plan approval',
+  merge: 'Merge approval',
+  production: 'Release approval',
+  information: 'Question',
+};
+
 const GATE_DETAIL: Record<string, string> = {
-  plan: 'The plan is written and waiting for a human before any code is touched.',
-  merge: 'The branch is pushed and validated. Nothing has reached the default branch.',
-  production: 'A production deployment is held at the gate.',
-  information: 'The agent stopped and asked a question rather than guessing.',
+  plan: 'Approve the plan before any code is written. Approving starts the Engineer.',
+  merge: 'The branch is pushed and checked. Approving merges the pull request.',
+  production: 'A production release is waiting. Approving puts it live.',
+  information: 'The agent stopped to ask a question rather than guess. Answer it to continue.',
+};
+
+const GATE_CTA: Record<string, string> = {
+  plan: 'Review plan',
+  merge: 'Review pull request',
+  production: 'Review release',
+  information: 'Answer',
 };
 
 export function Approvals({
@@ -33,8 +46,8 @@ export function Approvals({
   if (approvals.length === 0) {
     return (
       <Empty
-        title="No gate is open"
-        detail="Approvals appear here when a task reaches a gate the project is configured to hold — plan, merge or production. Nothing is waiting on a person right now."
+        title="Nothing needs a decision"
+        detail="Tasks appear here when they reach a point your projects hold for a person: the plan, the merge or the release. Nothing is waiting right now."
         table="agentsync.task_approvals"
       />
     );
@@ -42,42 +55,33 @@ export function Approvals({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="text-[14px] text-muted" style={{ lineHeight: 1.6 }}>
-        Every gate the platform is holding. Nothing below has touched a
-        protected branch or a production deployment.
-      </div>
+      <p className="m-0 text-[14px] leading-relaxed text-muted-3">
+        Nothing here has reached your default branch or production. Each task waits until someone decides.
+      </p>
       {approvals.map((ap) => (
         <div
           key={ap.id}
-          className="card flex flex-col items-start gap-4 p-4 lg:flex-row lg:items-center"
+          className="card flex flex-col items-start gap-4 border-[var(--color-gate-line)] p-4 sm:p-5 lg:flex-row lg:items-center"
         >
-          <div className="min-w-0 flex-1">
-            <div className="mb-1.5 flex flex-wrap items-center gap-2.5">
-              <Pill c={swatch(GATE_COLOUR, ap.gate)}>{ap.gate}</Pill>
-              <span className="mono text-[12.5px] font-medium text-accent">
-                {ap.reference}
+          <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <span className="inline-flex h-[22px] items-center gap-1.5 rounded-[5px] bg-gate-tint px-2 text-[12px] font-semibold text-gate-ink">
+                <span className="size-1.5 rounded-full bg-gate" />
+                {GATE_NAME[ap.gate] ?? ap.gate}
               </span>
-              <span className="mono text-[12px] text-muted-2">
-                waiting <Ago iso={ap.requested_at} />
+              <span className="mono text-[12.5px] text-muted-3">{ap.reference}</span>
+              <span className="text-[12.5px] text-muted-3">
+                {ap.project ? `${ap.project} · ` : ''}waiting <Ago iso={ap.requested_at} />
               </span>
-              {ap.project ? (
-                <span className="mono text-[12px] text-muted-3">
-                  {ap.project}
-                </span>
-              ) : null}
             </div>
-            <div className="mb-1 text-[15px] font-semibold tracking-[-0.01em]">
-              {ap.title}
-            </div>
-            <div className="text-[13.5px] text-muted" style={{ lineHeight: 1.5 }}>
+            <div className="text-[15.5px] leading-snug font-semibold">{ap.title}</div>
+            <div className="text-[13.5px] leading-normal text-ink-3">
               {GATE_DETAIL[ap.gate] ?? `Task status: ${ap.status}`}
             </div>
           </div>
-          <div className="flex gap-2">
-            <button className="btn" onClick={() => onOpen(ap.task_id)}>
-              Review
-            </button>
-          </div>
+          <button className="btn-primary" onClick={() => onOpen(ap.task_id)}>
+            {GATE_CTA[ap.gate] ?? 'Review'}
+          </button>
         </div>
       ))}
     </div>
@@ -102,11 +106,11 @@ export function Deployments({ deployments }: { deployments: DeploymentRow[] }) {
     <TableCard>
       <div className={`${DEP_GRID} border-b border-line bg-raised px-3.5 py-[9px]`}>
         <ColLabel>ENV</ColLabel>
-        <ColLabel>URL / BRANCH</ColLabel>
-        <ColLabel>COMMIT</ColLabel>
-        <ColLabel>STATUS</ColLabel>
-        <ColLabel>BUILD</ColLabel>
-        <ColLabel right>STARTED</ColLabel>
+        <ColLabel>URL / branch</ColLabel>
+        <ColLabel>Commit</ColLabel>
+        <ColLabel>Status</ColLabel>
+        <ColLabel>Build</ColLabel>
+        <ColLabel right>Started</ColLabel>
       </div>
       {deployments.map((dp) => (
         <div
@@ -161,7 +165,7 @@ export function Audit({ audit }: { audit: AuditRow[] }) {
     <TableCard
       head={
         <div className="flex items-center gap-3 border-b border-line px-3.5 py-[11px]">
-          <div className="label">TENANT-SCOPED · APPEND-ONLY · RLS ENFORCED</div>
+          <div className="label">Scoped to this tenant · entries can’t be changed</div>
           <div className="flex-1" />
           <div className="mono text-[12px] text-muted-2">
             LAST {audit.length}

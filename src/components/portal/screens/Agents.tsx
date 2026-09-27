@@ -28,8 +28,8 @@ export type AgentTab = (typeof AGENT_TABS)[number]['k'];
 
 /** The prompt is stored as one string; render it as lines without inventing colour. */
 function promptLines(prompt: string | null) {
-  if (!prompt) return [{ text: 'No system prompt is set.', color: '#5F616A' }];
-  return prompt.split('\n').map((text) => ({ text, color: '#2B2D33' }));
+  if (!prompt) return [{ text: 'No system prompt is set.', color: 'var(--color-muted-3)' }];
+  return prompt.split('\n').map((text) => ({ text, color: 'var(--color-ink-2)' }));
 }
 
 function setupGroups(agent: AgentDefinition) {
@@ -115,21 +115,21 @@ export default function Agents({
     <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[268px_1fr]">
       {/* ---- agent list ---- */}
       <div className="flex flex-col gap-2">
-        <div className="label">AGENT DEFINITIONS</div>
+        <div className="label">Agent definitions</div>
         {agents.map((a) => (
           <button
             key={a.key}
             onClick={() => onAgent(a.key)}
             className="cursor-pointer rounded-lg border p-3 text-left"
             style={{
-              background: agent.key === a.key ? '#F6F4EF' : '#FFFFFF',
-              borderColor: agent.key === a.key ? '#B9B4A8' : '#DAD5C8',
+              background: agent.key === a.key ? 'var(--color-raised)' : 'var(--color-card)',
+              borderColor: agent.key === a.key ? 'var(--color-line-strong)' : 'var(--color-line)',
             }}
           >
             <div className="flex items-center gap-2">
               <span
                 className="size-1.5 rounded-full"
-                style={{ background: a.enabled ? '#1F7A4D' : '#676972' }}
+                style={{ background: a.enabled ? 'var(--color-ok)' : 'var(--color-muted-4)' }}
               />
               <span className="flex-1 text-[14.5px] font-semibold">
                 {a.display_name}
@@ -152,14 +152,14 @@ export default function Agents({
           <div className="min-w-0 flex-1">
             <div className="mb-1.5 flex flex-wrap items-center gap-2.5">
               <span className="mono text-[12.5px] text-accent">{agent.key}</span>
-              <Pill c={agent.enabled ? ['#DDEFE3', '#17603C'] : ['#F0ECE3', '#5B5D66']}>
+              <Pill c={agent.enabled ? ['var(--color-ok-tint)', 'var(--color-ok-ink)'] : ['var(--color-line-faint)', 'var(--color-muted-2)']}>
                 {agent.enabled ? 'ENABLED' : 'DISABLED'}
               </Pill>
               <span className="mono text-[12px] text-muted-2">
                 {agent.platform_default ? 'platform default' : 'tenant override'}
               </span>
               {agent.veto_power ? (
-                <Pill c={['#F8E0DD', '#B42318']}>VETO</Pill>
+                <Pill c={['var(--color-danger-tint)', 'var(--color-danger)']}>Veto</Pill>
               ) : null}
             </div>
             <div className="text-[20px] font-semibold tracking-[-0.02em]">
@@ -193,9 +193,9 @@ export default function Agents({
                   onClick={() => onSetupGroup(i)}
                   className="cursor-pointer rounded-md border px-3 py-1.5 text-[13px] font-medium"
                   style={{
-                    background: sg.title === c.title ? '#15161A' : '#FFFFFF',
-                    color: sg.title === c.title ? '#FFFFFF' : '#5B5D66',
-                    borderColor: sg.title === c.title ? '#15161A' : '#DAD5C8',
+                    background: sg.title === c.title ? 'var(--color-ink)' : 'var(--color-card)',
+                    color: sg.title === c.title ? 'var(--color-card)' : 'var(--color-muted-2)',
+                    borderColor: sg.title === c.title ? 'var(--color-ink)' : 'var(--color-line)',
                   }}
                 >
                   {c.title}
@@ -226,14 +226,14 @@ export default function Agents({
                 agent_definitions.system_prompt
               </div>
               <div className="flex-1" />
-              <Pill c={['#FBE7DA', '#963510']}>
+              <Pill c={['var(--color-gate-tint)', 'var(--color-gate-ink)']}>
                 AGENTS.md IN REPO TAKES PRECEDENCE
               </Pill>
             </div>
             <CodeBlock lines={promptLines(agent.system_prompt)} />
             {Object.keys(agent.templates).length > 0 ? (
               <div className="mt-4">
-                <div className="label mb-2">TEMPLATES</div>
+                <div className="label mb-2">Templates</div>
                 <FieldRows
                   prefix={`${agent.key}.templates`}
                   rows={rowsFrom(agent.templates)}
@@ -251,9 +251,9 @@ export default function Agents({
           ) : (
             <div className="overflow-x-auto">
               <div className="grid min-w-[720px] grid-cols-[200px_1fr_100px] gap-3 border-b border-line bg-raised px-4 py-[9px]">
-                <ColLabel>TOOL</ColLabel>
-                <ColLabel>SCOPE</ColLabel>
-                <ColLabel right>GRANT</ColLabel>
+                <ColLabel>Tool</ColLabel>
+                <ColLabel>Scope</ColLabel>
+                <ColLabel right>Grant</ColLabel>
               </div>
               {agent.tools.map((t) => (
                 <div
@@ -277,7 +277,7 @@ export default function Agents({
 
         {tab === 'pipeline' ? (
           <div className="p-4">
-            <div className="label mb-3">STAGE ORDER · ALL AGENTS</div>
+            <div className="label mb-3">Order of work</div>
             <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
               {agents.map((p) => {
                 const current = p.key === agent.key;
@@ -286,8 +286,8 @@ export default function Agents({
                     key={p.key}
                     className="rounded-lg border p-3"
                     style={{
-                      borderColor: current ? ACCENT : '#DAD5C8',
-                      background: current ? '#F6F4EF' : '#FFFFFF',
+                      borderColor: current ? ACCENT : 'var(--color-line)',
+                      background: current ? 'var(--color-raised)' : 'var(--color-card)',
                       opacity: p.enabled ? 1 : 0.55,
                     }}
                   >
@@ -298,7 +298,7 @@ export default function Agents({
                     </div>
                     <div
                       className="mt-1 text-[14.5px] font-semibold"
-                      style={{ color: current ? '#15161A' : '#2B2D33' }}
+                      style={{ color: current ? 'var(--color-ink)' : 'var(--color-ink-2)' }}
                     >
                       {p.display_name}
                     </div>
@@ -343,12 +343,12 @@ export default function Agents({
           ) : (
             <div className="overflow-x-auto">
               <div className="grid min-w-[820px] grid-cols-[120px_minmax(160px,1fr)_100px_80px_80px_90px] gap-3 border-b border-line bg-raised px-4 py-[9px]">
-                <ColLabel>TASK</ColLabel>
-                <ColLabel>MODEL</ColLabel>
-                <ColLabel>TOKENS</ColLabel>
-                <ColLabel>COST</ColLabel>
-                <ColLabel>TIME</ColLabel>
-                <ColLabel right>WHEN</ColLabel>
+                <ColLabel>Task</ColLabel>
+                <ColLabel>Model</ColLabel>
+                <ColLabel>Tokens</ColLabel>
+                <ColLabel>Cost</ColLabel>
+                <ColLabel>Time</ColLabel>
+                <ColLabel right>When</ColLabel>
               </div>
               {agent.runs.map((r, i) => (
                 <div

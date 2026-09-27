@@ -60,7 +60,7 @@ export default function Tenants({
   return (
     <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[268px_1fr]">
       <div className="flex flex-col gap-2">
-        <div className="label">ALL TENANTS</div>
+        <div className="label">All tenants</div>
         {tenants.map((t) => (
           <button
             key={t.slug}
@@ -70,15 +70,15 @@ export default function Tenants({
             }}
             className="cursor-pointer rounded-lg border p-3 text-left"
             style={{
-              background: tenant.slug === t.slug ? '#F6F4EF' : '#FFFFFF',
-              borderColor: tenant.slug === t.slug ? '#B9B4A8' : '#DAD5C8',
+              background: tenant.slug === t.slug ? 'var(--color-raised)' : 'var(--color-card)',
+              borderColor: tenant.slug === t.slug ? 'var(--color-line-strong)' : 'var(--color-line)',
             }}
           >
             <div className="flex items-center gap-2">
               <span
                 className="size-1.5 rounded-full"
                 style={{
-                  background: t.status === 'active' ? '#1F7A4D' : '#C2410C',
+                  background: t.status.toLowerCase() === 'active' ? 'var(--color-ok)' : 'var(--color-muted-4)',
                 }}
               />
               <span className="flex-1 text-[14.5px] font-semibold">{t.name}</span>
@@ -97,12 +97,12 @@ export default function Tenants({
         <div className="flex flex-col items-start gap-4 p-4 lg:flex-row lg:items-center">
           <div className="min-w-0 flex-1">
             <div className="mb-1.5 flex flex-wrap items-center gap-2.5">
-              <span className="mono text-[12.5px] text-accent">{tenant.slug}</span>
+              <span className="mono text-[12.5px] text-muted-3">{tenant.slug}</span>
               <Pill
                 c={
-                  tenant.status === 'active'
-                    ? ['#DDEFE3', '#17603C']
-                    : ['#FBE7DA', '#C2410C']
+                  tenant.status.toLowerCase() === 'active'
+                    ? ['var(--color-ok-tint)', 'var(--color-ok-ink)']
+                    : ['var(--color-caution-tint)', 'var(--color-caution-ink)']
                 }
               >
                 {tenant.status.toUpperCase()}
@@ -144,10 +144,10 @@ export default function Tenants({
         {g.kind === 'users' ? (
           <div className="overflow-x-auto">
             <div className="grid min-w-[720px] grid-cols-[minmax(220px,1fr)_190px_140px_100px] gap-3 border-b border-line bg-raised px-4 py-[9px]">
-              <ColLabel>USER</ColLabel>
-              <ColLabel>ROLE</ColLabel>
-              <ColLabel>LAST ACTIVE</ColLabel>
-              <ColLabel right>STATE</ColLabel>
+              <ColLabel>User</ColLabel>
+              <ColLabel>Role</ColLabel>
+              <ColLabel>Last active</ColLabel>
+              <ColLabel right>State</ColLabel>
             </div>
             {members.map((u) => (
               <div

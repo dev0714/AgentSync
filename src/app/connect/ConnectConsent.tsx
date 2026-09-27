@@ -57,7 +57,7 @@ export default function ConnectConsent(props: {
   const label = account ? `${app} · ${account}` : app;
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-canvas px-4 py-10 text-ink sm:px-6">
+    <main className="portal-ui flex min-h-screen items-center justify-center bg-canvas px-4 py-10 text-ink sm:px-6">
       <div className="fade-up card flex w-full max-w-[480px] flex-col gap-6 p-5 sm:p-7">
         <Logo size={24} decorative />
         {!valid ? (
@@ -106,7 +106,7 @@ export default function ConnectConsent(props: {
             </div>
 
             {problem ? (
-              <div role="alert" className="rounded-xl border border-[#e7b8b2] bg-danger-tint px-3.5 py-3 text-[14px] leading-[1.5] text-danger-ink">
+              <div role="alert" className="rounded-xl border border-[var(--color-danger-line)] bg-danger-tint px-3.5 py-3 text-[14px] leading-[1.5] text-danger-ink">
                 {problem}
               </div>
             ) : null}

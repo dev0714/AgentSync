@@ -99,7 +99,7 @@ function ProviderForm({
     <form onSubmit={save} className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2.5">
         <div className="text-[14.5px] font-semibold">{provider.label}</div>
-        <Pill c={existing ? ['#DDEFE3', '#17603C'] : ['#F0ECE3', '#5B5D66']}>
+        <Pill c={existing ? ['var(--color-ok-tint)', 'var(--color-ok-ink)'] : ['var(--color-line-faint)', 'var(--color-muted-2)']}>
           {existing ? 'CONFIGURED' : 'NOT CONFIGURED'}
         </Pill>
         <a

@@ -78,10 +78,10 @@ export default function WebhookForm({
         <div className="overflow-x-auto rounded-lg border border-line">
           <div className={`${GRID} border-b border-line bg-raised px-3.5 py-[9px]`}>
             <ColLabel>DIR</ColLabel>
-            <ColLabel>PATH / URL</ColLabel>
-            <ColLabel>SIGNING SECRET</ColLabel>
-            <ColLabel>REPLAY</ColLabel>
-            <ColLabel>STATE</ColLabel>
+            <ColLabel>Path / URL</ColLabel>
+            <ColLabel>Signing secret</ColLabel>
+            <ColLabel>Replay</ColLabel>
+            <ColLabel>State</ColLabel>
             <ColLabel right>{''}</ColLabel>
           </div>
           {endpoints.map((h) => (
@@ -91,7 +91,7 @@ export default function WebhookForm({
             >
               <span
                 className="mono text-[11.5px]"
-                style={{ color: h.direction === 'IN' ? '#0550C4' : '#17603C' }}
+                style={{ color: h.direction === 'IN' ? 'var(--color-agent-ink)' : 'var(--color-ok-ink)' }}
               >
                 {h.direction}
               </span>
@@ -105,7 +105,7 @@ export default function WebhookForm({
               <span className="mono text-[12px] text-muted-2">
                 {h.replay_window_seconds ?? '—'}s
               </span>
-              <Pill c={h.enabled ? ['#DDEFE3', '#17603C'] : ['#F0ECE3', '#5B5D66']}>
+              <Pill c={h.enabled ? ['var(--color-ok-tint)', 'var(--color-ok-ink)'] : ['var(--color-line-faint)', 'var(--color-muted-2)']}>
                 {h.enabled ? 'ENABLED' : 'DISABLED'}
               </Pill>
               <div className="text-right">
@@ -129,7 +129,7 @@ export default function WebhookForm({
       ) : null}
 
       <form onSubmit={add} className="flex flex-col gap-4">
-        <div className="label">ADD AN ENDPOINT</div>
+        <div className="label">Add an endpoint</div>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           <Field
             label="direction"

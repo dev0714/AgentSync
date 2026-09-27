@@ -8,7 +8,7 @@ import {
   useMemo,
   useState,
 } from 'react';
-import { ago, type Line, type Row } from '@/lib/portal-ui';
+import { ago, statusLabel, type Line, type Row } from '@/lib/portal-ui';
 
 /* ---- editable configuration fields ---------------------------------- */
 
@@ -57,11 +57,11 @@ export function FieldRows({ prefix, rows }: { prefix: string; rows: Row[] }) {
             className="grid grid-cols-[minmax(140px,190px)_1fr] items-center gap-3"
           >
             <label
-              className="mono truncate text-muted-2"
-              style={{ fontSize: 12.5 }}
+              className="truncate text-[13px] text-muted-3"
               htmlFor={id}
+              title={r.key}
             >
-              {r.key}
+              {statusLabel(r.key)}
             </label>
             {isBool ? (
               <select
@@ -127,12 +127,18 @@ export function Pill({
   className?: string;
   style?: React.CSSProperties;
 }) {
+  // Stored states read as words: ACTIVE → "Active", awaiting_merge_approval →
+  // "Awaiting merge approval". Anything already in mixed case is left alone.
+  const text =
+    typeof children === 'string' && /^[A-Z0-9_ ]+$|^[a-z0-9_]+$/.test(children)
+      ? statusLabel(children)
+      : children;
   return (
     <span
       className={`pill ${className}`}
       style={{ background: c[0], color: c[1], ...style }}
     >
-      {children}
+      {text}
     </span>
   );
 }
@@ -187,15 +193,15 @@ export function Tabs<T extends string>({
           onClick={() => onSelect(t.k)}
           className="flex cursor-pointer items-center gap-2 border-b-2 px-4 py-[11px] text-[14px] font-medium"
           style={{
-            borderBottomColor: active === t.k ? 'var(--color-accent)' : 'transparent',
-            color: active === t.k ? '#15161A' : '#5F616A',
+            borderBottomColor: active === t.k ? 'var(--color-ink)' : 'transparent',
+            color: active === t.k ? 'var(--color-ink)' : 'var(--color-muted-3)',
           }}
         >
           {t.label}
           {t.dot && t.dot !== 'transparent' ? (
             <span
               className="size-1.5 rounded-full"
-              style={{ background: active === t.k ? t.dot : '#E4E0D6' }}
+              style={{ background: active === t.k ? t.dot : 'var(--color-line-soft)' }}
             />
           ) : null}
         </button>

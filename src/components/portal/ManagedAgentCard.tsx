@@ -62,7 +62,7 @@ export default function ManagedAgentCard({ tenantSlug }: { tenantSlug: string | 
   const a = state.agent;
 
   return (
-    <div className="mx-4 mt-4 flex flex-col gap-3 rounded-[14px] border border-line-soft bg-agent-tint/40 p-4">
+    <div className="mx-4 mt-4 flex flex-col gap-3 rounded-[10px] border border-line-soft bg-agent-tint/40 p-4">
       <div className="flex flex-wrap items-center gap-2.5">
         <span className={`size-2 rounded-full ${a ? 'bg-ok' : 'bg-muted-3'}`} />
         <div className="text-[14.5px] font-semibold text-ink">

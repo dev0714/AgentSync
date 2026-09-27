@@ -421,17 +421,17 @@ export default function Connections({
             <button
               key={t.name}
               onClick={() => onTab(t.tab)}
-              className="card flex cursor-pointer flex-col gap-2 p-4 text-left hover:border-[#B9B4A8]"
+              className="card flex cursor-pointer flex-col gap-2 p-4 text-left hover:border-[var(--color-line-strong)]"
             >
               <div className="flex items-center gap-2">
                 <span
                   className="size-1.5 rounded-full"
-                  style={{ background: t.connected ? '#1F7A4D' : '#676972' }}
+                  style={{ background: t.connected ? 'var(--color-ok)' : 'var(--color-muted-4)' }}
                 />
                 <span className="flex-1 text-[15px] font-semibold">
                   {t.name}
                 </span>
-                <Pill c={t.connected ? ['#DDEFE3', '#17603C'] : ['#F0ECE3', '#5B5D66']}>
+                <Pill c={t.connected ? ['var(--color-ok-tint)', 'var(--color-ok-ink)'] : ['var(--color-line-faint)', 'var(--color-muted-2)']}>
                   {t.connected ? 'CONNECTED' : 'NOT CONNECTED'}
                 </Pill>
               </div>
@@ -439,8 +439,8 @@ export default function Connections({
               <div className="text-[13px] text-muted" style={{ lineHeight: 1.5 }}>
                 {t.meta}
               </div>
-              <div className="mono mt-1 text-[11.5px] text-accent">
-                {t.connected ? 'REVIEW →' : 'SET UP →'}
+              <div className="mt-1 text-[13px] font-medium text-agent-ink">
+                {t.connected ? 'Review →' : 'Set up →'}
               </div>
             </button>
           ))}

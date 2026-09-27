@@ -6,8 +6,8 @@
  * decides how a value that came from the database is drawn.
  */
 
-export const ACCENT = '#0B6BFF';
-export const GATE = '#C2410C';
+export const ACCENT = 'var(--color-accent)';
+export const GATE = 'var(--color-gate)';
 
 export type Swatch = [background: string, foreground: string];
 
@@ -19,13 +19,13 @@ export type Swatch = [background: string, foreground: string];
  * second look (a suspended account, a repaired check) so that orange keeps
  * meaning one thing across the whole control plane.
  */
-export const OK: Swatch = ['#DDEFE3', '#17603C'];
-export const GATE_SWATCH: Swatch = ['#FBE7DA', '#963510'];
-export const CAUTION: Swatch = ['#F5EDD2', '#6B5300'];
+export const OK: Swatch = ['var(--color-ok-tint)', 'var(--color-ok-ink)'];
+export const GATE_SWATCH: Swatch = ['var(--color-gate-tint)', 'var(--color-gate-ink)'];
+export const CAUTION: Swatch = ['var(--color-caution-tint)', 'var(--color-caution-ink)'];
 export const WARN = CAUTION;
-export const OFF: Swatch = ['#F0ECE3', '#3A3C44'];
-export const NO: Swatch = ['#F8E0DD', '#962017'];
-export const INFO: Swatch = ['#E1ECFF', '#0550C4'];
+export const OFF: Swatch = ['var(--color-line-faint)', 'var(--color-ink-3)'];
+export const NO: Swatch = ['var(--color-danger-tint)', 'var(--color-danger-ink)'];
+export const INFO: Swatch = ['var(--color-agent-tint)', 'var(--color-agent-ink)'];
 
 export type Row = { key: string; value: string; color?: string };
 export type Line = { text: string; color: string };
@@ -131,12 +131,12 @@ export function swatch(map: Record<string, Swatch>, key: string | null): Swatch 
 /** Audit event types are open-ended, so colour by prefix rather than by list. */
 export function eventColour(type: string): string {
   if (type.startsWith('security') || type.includes('denied') || type.includes('failed')) {
-    return '#962017';
+    return 'var(--color-danger-ink)';
   }
-  if (type.includes('approval') || type.includes('awaiting')) return '#963510';
-  if (type.includes('completed') || type.includes('approved')) return '#17603C';
-  if (type.startsWith('task.')) return '#0550C4';
-  return '#5B5D66';
+  if (type.includes('approval') || type.includes('awaiting')) return 'var(--color-gate-ink)';
+  if (type.includes('completed') || type.includes('approved')) return 'var(--color-ok-ink)';
+  if (type.startsWith('task.')) return 'var(--color-agent-ink)';
+  return 'var(--color-muted-2)';
 }
 
 /* ---- task list filters ---------------------------------------------- */
@@ -145,8 +145,8 @@ export type FilterKey = 'all' | 'gate' | 'running' | 'failed' | 'completed';
 
 export const FILTERS: { key: FilterKey; label: string }[] = [
   { key: 'all', label: 'All' },
-  { key: 'gate', label: 'Awaiting a human' },
-  { key: 'running', label: 'In flight' },
+  { key: 'gate', label: 'Needs a decision' },
+  { key: 'running', label: 'In progress' },
   { key: 'failed', label: 'Failed' },
   { key: 'completed', label: 'Completed' },
 ];
@@ -269,6 +269,6 @@ export function rowsFrom(
     .map(([key, value]) => ({
       key,
       value: display(value),
-      color: typeof value === 'boolean' ? (value ? '#17603C' : '#5B5D66') : undefined,
+      color: typeof value === 'boolean' ? (value ? 'var(--color-ok-ink)' : 'var(--color-muted-2)') : undefined,
     }));
 }

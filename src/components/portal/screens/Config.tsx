@@ -242,7 +242,7 @@ export function Project_({
             {project.name}
           </div>
         )}
-        <Pill c={project.enabled ? ['#DDEFE3', '#17603C'] : ['#F0ECE3', '#5B5D66']}>
+        <Pill c={project.enabled ? ['var(--color-ok-tint)', 'var(--color-ok-ink)'] : ['var(--color-line-faint)', 'var(--color-muted-2)']}>
           {project.enabled ? 'Active' : 'Disabled — not in the GitHub installation'}
         </Pill>
         <span className="mono text-[12.5px] text-muted-2">
@@ -407,13 +407,13 @@ export function Sources({ sources, tenantSlug }: { sources: SourceRow[]; tenantS
         <div
           className={`${SRC_GRID} border-b border-line bg-raised px-3.5 py-[9px]`}
         >
-          <ColLabel>SYSTEM</ColLabel>
-          <ColLabel>KEY PREFIX</ColLabel>
-          <ColLabel>IP ALLOWLIST</ColLabel>
-          <ColLabel>RATE LIMIT</ColLabel>
-          <ColLabel>TASKS</ColLabel>
-          <ColLabel right>STATE</ColLabel>
-          <ColLabel right>CLIENTS</ColLabel>
+          <ColLabel>System</ColLabel>
+          <ColLabel>Key prefix</ColLabel>
+          <ColLabel>IP allowlist</ColLabel>
+          <ColLabel>Rate limit</ColLabel>
+          <ColLabel>Tasks</ColLabel>
+          <ColLabel right>State</ColLabel>
+          <ColLabel right>Clients</ColLabel>
         </div>
         {sources.map((s) => (
           <div
@@ -474,10 +474,10 @@ export function Usage_({
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {[
-          { label: 'SPEND · THIS MONTH', value: money(usage.month_cost), sub: usage.budget > 0 ? `of ${money(usage.budget)} budgeted` : 'no budget set' },
-          { label: 'INPUT TOKENS', value: compact(usage.month_input_tokens), sub: 'this month' },
-          { label: 'OUTPUT TOKENS', value: compact(usage.month_output_tokens), sub: 'this month' },
-          { label: 'FAILOVER CALLS', value: String(usage.failover_calls), sub: 'served by the fallback model' },
+          { label: 'Spend this month', value: money(usage.month_cost), sub: usage.budget > 0 ? `of ${money(usage.budget)} budgeted` : 'no budget set' },
+          { label: 'Input tokens', value: compact(usage.month_input_tokens), sub: 'this month' },
+          { label: 'Output tokens', value: compact(usage.month_output_tokens), sub: 'this month' },
+          { label: 'Failover calls', value: String(usage.failover_calls), sub: 'served by the fallback model' },
         ].map((uc) => (
           <div key={uc.label} className="card flex flex-col gap-[7px] px-[15px] py-3.5">
             <div className="label">{uc.label}</div>

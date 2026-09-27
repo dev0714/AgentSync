@@ -54,6 +54,17 @@
   --color-danger-tint: #f8e0dd;
   --color-info: #0b6bff;
 
+  /* Edges for tinted blocks, a heavier line for controls, and the
+     "worth a second look" swatch (caution) that is not a decision. */
+  --color-line-strong: #c9c4b7;
+  --color-gate-line: #f0c9a8;
+  --color-on-gate: #ffffff;
+  --color-ok-line: #bfdfcb;
+  --color-danger-line: #e7b8b2;
+  --color-caution-tint: #f5edd2;
+  --color-caution-ink: #6b5300;
+  --color-field-line: #cfc9bb;
+
   --color-night: #15161a;
   --color-night-2: #1f2026;
   --color-night-line: #2c2e35;
@@ -61,6 +72,131 @@
   --font-display: var(--font-display-face), 'Geist', system-ui, sans-serif;
   --font-sans: var(--font-sans-face), system-ui, sans-serif;
   --font-mono: var(--font-mono-face), ui-monospace, monospace;
+}
+
+/*
+ * The control plane (portal, sign-in, connect) — "Control": cool greys, one
+ * type family, tighter corners, and a dark theme. Everything inside
+ * .portal-ui takes these values; the marketing site keeps Paper & Signal.
+ * The meaning of colour is unchanged: blue = an agent is working, orange = a
+ * person decides, green = done, red = failed, yellow (caution) = worth a look.
+ *
+ * The theme is html[data-theme]: set before first paint by the script in the
+ * root layout from the saved choice, else the system setting.
+ */
+.portal-ui {
+  color-scheme: light;
+  --color-canvas: #f4f5f7;
+  --color-canvas-alt: #fafafb;
+  --color-surface: #f7f8fa;
+  --color-card: #ffffff;
+  --color-raised: #f7f8fa;
+  --color-line: #dcdfe5;
+  --color-line-soft: #e3e5ea;
+  --color-line-faint: #eef0f3;
+  --color-line-strong: #c8ccd4;
+  --color-field-line: #c8ccd4;
+
+  --color-ink: #111318;
+  --color-ink-2: #262930;
+  --color-ink-3: #383c45;
+  --color-muted: #4d525c;
+  --color-muted-2: #565b66;
+  --color-muted-3: #5d636e;
+  --color-muted-4: #636974;
+
+  --color-accent: #0b6bff;
+  --color-accent-hover: #0550c4;
+  --color-agent-ink: #0550c4;
+  --color-agent-tint: #e6eeff;
+
+  --color-gate: #c2410c;
+  --color-gate-ink: #963510;
+  --color-gate-tint: #fcebdd;
+  --color-gate-line: #f1c8a5;
+  --color-on-gate: #ffffff;
+
+  --color-ok: #1f7a4d;
+  --color-ok-bright: #1f7a4d;
+  --color-ok-ink: #17603c;
+  --color-ok-tint: #dff1e6;
+  --color-ok-line: #b8dec6;
+  --color-warn: #c2410c;
+  --color-warn-2: #963510;
+  --color-danger: #b42318;
+  --color-danger-2: #b42318;
+  --color-danger-ink: #962017;
+  --color-danger-tint: #f9e2df;
+  --color-danger-line: #efc3be;
+  --color-caution-tint: #f6efd6;
+  --color-caution-ink: #6b5300;
+  --color-info: #0b6bff;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 8px;
+  --radius-2xl: 10px;
+  --radius-3xl: 12px;
+
+  --font-display: var(--font-sans-face), system-ui, sans-serif;
+  --shadow-card: 0 1px 2px rgba(17, 19, 24, 0.04);
+  --scroll-thumb: #cdd1d8;
+
+  background: var(--color-canvas);
+  color: var(--color-ink);
+}
+
+html[data-theme='dark'] .portal-ui {
+  color-scheme: dark;
+  --color-canvas: #0b0c0f;
+  --color-canvas-alt: #0f1014;
+  --color-surface: #121417;
+  --color-card: #141619;
+  --color-raised: #181a1e;
+  --color-line: #2c2f36;
+  --color-line-soft: #24272d;
+  --color-line-faint: #1c1e23;
+  --color-line-strong: #3a3e47;
+  --color-field-line: #3a3e47;
+
+  --color-ink: #eceef2;
+  --color-ink-2: #dadde3;
+  --color-ink-3: #c4c8d0;
+  --color-muted: #a6abb5;
+  --color-muted-2: #a0a5af;
+  --color-muted-3: #989da8;
+  --color-muted-4: #9297a1;
+
+  --color-accent: #4c8dff;
+  --color-accent-hover: #7aaaff;
+  --color-agent-ink: #8db5ff;
+  --color-agent-tint: #15233f;
+
+  --color-gate: #f08a4b;
+  --color-gate-ink: #f7ad7e;
+  --color-gate-tint: #34200f;
+  --color-gate-line: #5a3518;
+  --color-on-gate: #1a0e05;
+
+  --color-ok: #6fd39c;
+  --color-ok-bright: #6fd39c;
+  --color-ok-ink: #8be0b1;
+  --color-ok-tint: #10301e;
+  --color-ok-line: #1e5236;
+  --color-warn: #f08a4b;
+  --color-warn-2: #f7ad7e;
+  --color-danger: #ff8f85;
+  --color-danger-2: #ff8f85;
+  --color-danger-ink: #ffa79f;
+  --color-danger-tint: #3a1715;
+  --color-danger-line: #5c2522;
+  --color-caution-tint: #2f2a12;
+  --color-caution-ink: #e8cf6e;
+  --color-info: #4c8dff;
+
+  --shadow-card: none;
+  --scroll-thumb: #33363e;
 }
 
 @layer base {
@@ -101,7 +237,7 @@ a:hover {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cfc9bb;
+  background: var(--scroll-thumb, #cfc9bb);
   border-radius: 6px;
   border: 3px solid var(--color-canvas);
 }
@@ -253,6 +389,77 @@ a:hover {
 .field-select:focus {
   border-color: var(--color-accent);
   box-shadow: 0 0 0 3px var(--color-agent-tint);
+}
+
+/* ---- the control plane's shapes (see .portal-ui above) ------------------ */
+
+.portal-ui .display {
+  font-family: var(--font-sans);
+  letter-spacing: -0.02em;
+}
+
+.portal-ui .label {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--color-muted-3);
+}
+
+.portal-ui .card {
+  border-color: var(--color-line-soft);
+  border-radius: 10px;
+  box-shadow: var(--shadow-card);
+}
+
+.portal-ui .pill {
+  border-radius: 5px;
+  padding: 3px 9px;
+  font-weight: 500;
+}
+
+.portal-ui .btn,
+.portal-ui .btn-primary,
+.portal-ui .btn-danger,
+.portal-ui .btn-gate {
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.portal-ui .btn {
+  border-color: var(--color-line-strong);
+}
+
+.portal-ui .btn-primary {
+  border: 1px solid var(--color-ink);
+}
+
+.portal-ui .btn-primary:hover {
+  background: var(--color-ink-3);
+}
+
+.portal-ui .btn-gate {
+  color: var(--color-on-gate);
+}
+
+.portal-ui .btn-danger {
+  border-color: var(--color-danger-line);
+}
+
+.portal-ui .field-input,
+.portal-ui .field-select {
+  min-height: 38px;
+  border-color: var(--color-field-line);
+  border-radius: 8px;
+}
+
+/* A calm control plane: cards don't jump on hover. */
+.portal-ui .lift:hover {
+  transform: none;
+  box-shadow: none;
 }
 }
 
@@ -497,4 +704,27 @@ a:hover {
   .md-doc th { background: var(--color-raised); font-weight: 600; }
   .md-doc hr { border: 0; border-top: 1px solid var(--color-line); margin: 16px 0; }
   .md-doc img { max-width: 100%; }
+}
+
+/* The selected theme button: a hairline instead of a shadow on dark. */
+html[data-theme='dark'] .portal-ui .dark-ring {
+  box-shadow: 0 0 0 1px var(--color-line-strong);
+}
+
+/* Behind the control plane (overscroll, short pages): its own ground. */
+body:has(.portal-ui) {
+  background: #f4f5f7;
+}
+html[data-theme='dark'] body:has(.portal-ui) {
+  background: #0b0c0f;
+}
+
+.portal-ui .logo-on-dark {
+  display: none;
+}
+html[data-theme='dark'] .portal-ui .logo-on-light {
+  display: none;
+}
+html[data-theme='dark'] .portal-ui .logo-on-dark {
+  display: block;
 }

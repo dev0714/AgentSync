@@ -146,7 +146,7 @@ function FinishConnecting({ app }: { app: Unfinished }) {
   }
 
   return (
-    <div className="flex flex-col gap-3 rounded-[14px] border border-[#F0C9A8] bg-gate-tint p-4">
+    <div className="flex flex-col gap-3 rounded-[10px] border border-[var(--color-gate-line)] bg-gate-tint p-4">
       <div className="text-[14.5px] font-semibold text-gate-ink">
         Finish connecting <span className="mono">{app.app_slug}</span>
       </div>
