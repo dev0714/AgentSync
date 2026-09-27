@@ -255,6 +255,7 @@ export default function Detail({
       {banner ? (
         <GateBanner
           dbPending={(detail.db_changes ?? []).filter((c) => c.status === 'pending' || c.status === 'failed').length}
+          dbCanRun={!!detail.database?.connected && !!detail.database?.project_ref}
           taskId={task.id}
           status={task.status}
           title={banner.title}
@@ -726,6 +727,7 @@ const DECISION_ERROR: Record<string, string> = {
   NOT_AT_GATE: 'This task has already moved on — refresh to see where it is.',
   COMMENT_REQUIRED: 'Say what should change before requesting changes.',
   DB_CHANGES_PENDING: 'This change needs database changes applied first — run them or mark them as applied above.',
+  DB_CHANGE_FAILED: 'A database script failed, so nothing was merged. See the database changes above.',
   NOTHING_TO_BUILD: 'This plan changes no files, so there is nothing to approve. Answer the Planner or reject the task.',
 };
 
@@ -743,10 +745,13 @@ function GateBanner({
   questions = [],
   summary = null,
   dbPending = 0,
+  dbCanRun = false,
   onDecided,
 }: {
-  /** Database scripts still to run: the merge waits for them. */
+  /** Database scripts still to run: approving the merge runs them first. */
   dbPending?: number;
+  /** Whether they can run from here (Supabase connected, project linked). */
+  dbCanRun?: boolean;
   taskId: string;
   status: string;
   title: string;
@@ -771,6 +776,8 @@ function GateBanner({
       return;
     }
     if (decision === 'rejected' && !window.confirm('Reject and cancel this task?')) return;
+    if (decision === 'approved' && gate === 'merge' && dbPending > 0
+      && !window.confirm(`Run ${dbPending} database script${dbPending === 1 ? '' : 's'} on the live database, then merge? If a script fails, nothing is merged.`)) return;
     setBusy(decision);
     setProblem(null);
     try {
@@ -779,9 +786,14 @@ function GateBanner({
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ gate, decision, comment: comment.trim() || undefined }),
       });
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      const data = (await res.json().catch(() => ({}))) as { error?: string; detail?: string };
       if (!res.ok) {
-        setProblem(DECISION_ERROR[data.error ?? ''] ?? `Could not record the decision (${data.error ?? res.status}).`);
+        setProblem(
+          (data.error === 'DB_CHANGE_FAILED' && data.detail) ||
+          DECISION_ERROR[data.error ?? ''] ||
+          `Could not record the decision (${data.error ?? res.status}).`,
+        );
+        if (data.error === 'DB_CHANGE_FAILED') onDecided();
         return;
       }
       setComment('');
@@ -812,7 +824,9 @@ function GateBanner({
             : gate === 'plan'
             ? 'No code is written until the plan is approved. Approving starts the Engineer. Asking for changes re-reads the code with your note and the Planner writes a new version.'
             : gate === 'merge'
-              ? 'The checks and the review are below. Approving merges the pull request and releases it. Asking for changes sends your note back to the Engineer.'
+              ? dbPending > 0 && dbCanRun
+                ? 'The checks and the review are below. Approving runs the database changes on the live database, then merges the pull request and releases it. Asking for changes sends your note back to the Engineer.'
+                : 'The checks and the review are below. Approving merges the pull request and releases it. Asking for changes sends your note back to the Engineer.'
               : body}
         </p>
       </div>
@@ -861,15 +875,17 @@ function GateBanner({
                 <>
                   <button
                     className="btn-primary"
-                    disabled={!!busy || (gate === 'merge' && dbPending > 0)}
-                    title={gate === 'merge' && dbPending > 0 ? 'Run or mark the database changes above first' : undefined}
+                    disabled={!!busy || (gate === 'merge' && dbPending > 0 && !dbCanRun)}
+                    title={gate === 'merge' && dbPending > 0 && !dbCanRun ? 'Mark the database changes above as applied first' : undefined}
                     onClick={() => decide('approved')}
                   >
-                    {busy === 'approved' ? 'Approving…' : gate === 'plan' ? 'Approve plan' : 'Approve and merge'}
+                    {busy === 'approved'
+                      ? gate === 'merge' && dbPending > 0 ? 'Applying database changes…' : 'Approving…'
+                      : gate === 'plan' ? 'Approve plan' : dbPending > 0 && dbCanRun ? 'Apply database changes & merge' : 'Approve and merge'}
                   </button>
-                  {gate === 'merge' && dbPending > 0 ? (
+                  {gate === 'merge' && dbPending > 0 && !dbCanRun ? (
                     <span className="text-[13px] text-gate-ink">
-                      {dbPending} database change{dbPending === 1 ? '' : 's'} to apply first
+                      {dbPending} database change{dbPending === 1 ? '' : 's'} to mark as applied first
                     </span>
                   ) : null}
                   <button className="btn" disabled={!!busy} onClick={() => setAsking(true)}>
@@ -898,12 +914,14 @@ const DB_ERROR: Record<string, string> = {
   NOT_AUTHORISED: 'Only an approver or admin for this tenant can do this.',
   NOT_CONNECTED: 'Supabase is not connected. Connect it under Connections → Supabase, or mark the script as applied.',
   NO_PROJECT_LINKED: 'This project is not linked to a Supabase project. Link it in the project’s Settings → Database.',
+  SECRET_UNAVAILABLE: 'The Supabase token could not be read. Reconnect Supabase under Connections.',
   SCRIPT_NOT_FOUND: 'The script is no longer on the branch.',
 };
 
 /**
- * The SQL a change carries. Each script must run on the database before the
- * change merges: through the Supabase connection, or by hand and then marked.
+ * The SQL a change carries. AgentSync tries each script on the database (and
+ * rolls it back) before review, and runs it for real when the merge is
+ * approved; one applied by hand is marked instead.
  */
 function DbChanges({
   taskId,
@@ -956,7 +974,9 @@ function DbChanges({
         <span className="text-[15px] font-semibold text-ink">Database changes</span>
         <span className="text-[13px] text-muted-3">
           {pending
-            ? `Run before merging${canRun ? ` — on Supabase project ${database.project_ref}` : ''}`
+            ? canRun
+              ? `Run on Supabase project ${database.project_ref} when you approve the merge`
+              : 'Apply by hand and mark as applied before merging'
             : 'All applied'}
         </span>
       </div>
@@ -967,6 +987,16 @@ function DbChanges({
               <span className="mono min-w-0 flex-1 text-[13px] [overflow-wrap:anywhere]">{c.path}</span>
               <span className={`rounded-full px-2.5 py-0.5 text-[12px] font-semibold ${tone(c.status)}`}>{word(c.status)}</span>
             </div>
+            {c.dry_run_status && (c.status === 'pending' || c.status === 'failed') ? (
+              <span className={`text-[12.5px] ${c.dry_run_status === 'failed' ? 'text-danger-ink' : 'text-muted-3'}`}>
+                {c.dry_run_status === 'passed'
+                  ? 'Tried on the database and rolled back: applies cleanly'
+                  : c.dry_run_status === 'failed'
+                    ? `Tried on the database: would fail — ${(c.dry_run_output ?? '').slice(0, 200)}`
+                    : c.dry_run_output ?? 'Not tested'}
+                {c.dry_run_at ? <> · <Ago iso={c.dry_run_at} /></> : null}
+              </span>
+            ) : null}
             {c.applied_by_email ? (
               <span className="text-[12.5px] text-muted-3">
                 {word(c.status)} by {c.applied_by_email}
@@ -977,8 +1007,8 @@ function DbChanges({
             {(c.status === 'pending' || c.status === 'failed') && atMerge ? (
               <div className="flex flex-wrap items-center gap-2">
                 {canRun ? (
-                  <button className="btn-primary" disabled={!!busy} onClick={() => void act(c.id, 'run')}>
-                    {busy === c.id + 'run' ? 'Running…' : `Run on Supabase (${database.project_ref})`}
+                  <button className="btn" disabled={!!busy} onClick={() => void act(c.id, 'run')}>
+                    {busy === c.id + 'run' ? 'Running…' : 'Run now'}
                   </button>
                 ) : null}
                 <button className="btn" disabled={!!busy} onClick={() => void act(c.id, 'mark_applied')}>

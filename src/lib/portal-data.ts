@@ -440,6 +440,10 @@ export type TaskDetail = {
     applied_by_email: string | null;
     applied_at: string | null;
     output: string | null;
+    /** Tried on the database and rolled back, before review. */
+    dry_run_status?: 'passed' | 'failed' | 'skipped' | null;
+    dry_run_output?: string | null;
+    dry_run_at?: string | null;
   }[];
   database?: { connected: boolean; project_ref: string | null };
   /** For a failed task: where it stopped, and whether Retry can resume the build. */

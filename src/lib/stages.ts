@@ -49,6 +49,7 @@ import { DOC_PATH, recordAgentDoc } from './project-docs';
 import { queryTerms } from './graph-query';
 import { mapBriefing, planImpact, queueMap, readMapFile, recordMapFeedback, type Impact } from './project-maps';
 import { optionalSecret } from './secrets';
+import { dryRunSql, readSchema, schemaMarkdown, schemaSummary, taskDatabase } from './supabase-schema';
 import { serviceClient } from './supabase';
 
 /**
@@ -483,6 +484,7 @@ async function plan(job: Job): Promise<Outcome> {
     `<repository_paths count="${context.total_paths ?? context.paths.length}">\n${context.paths.join('\n')}\n</repository_paths>`,
     ...Object.entries(context.files).map(([p, c]) => `<file path="${p}">\n${c}\n</file>`),
     'Write the implementation plan. List in affected_files every path you expect to create, modify or delete — the Engineer may only touch those paths.',
+    await plannerDatabaseBlock(job),
     'If the change needs a database change, list its own .sql file under the project\'s migration folder (supabase/migrations, migrations or scripts) in affected_files; it runs on the database at the merge approval, before the code merges.',
     `Never plan changes to protected paths: ${(job.repository?.protected_paths ?? []).join(', ') || 'none'}.`,
   ].filter(Boolean).join('\n\n');
@@ -761,6 +763,7 @@ async function implementInSandbox(job: Job): Promise<Outcome> {
     const docs = await readyAttachments(job.task.id);
     // The code map goes into the sandbox too, for Graphify's own lookups.
     const map = await codeMapUpload(job, ctx, onOpenAI).catch((e) => { console.error('code map upload failed', e); return null; });
+    const schema = await schemaUpload(job, ctx, onOpenAI).catch((e) => { console.error('database schema unavailable', e); return null; });
     const planFiles = await planFilesBlock(client, r, planned, exists ? branch : r.defaultBranch);
     const known = await baselineBlock(job, client, r).catch((e) => { console.error('check baseline unavailable', e); return ''; });
     const prompt = [
@@ -774,6 +777,7 @@ async function implementInSandbox(job: Job): Promise<Outcome> {
       known,
       memory,
       codeMapPrompt(job, map, onOpenAI),
+      databasePrompt(schema, onOpenAI),
       sandboxAttachmentPrompt(docs, onOpenAI ? 'openai' : 'claude'),
       `Branch: ${branch} (${exists ? 'exists — check it out and build on it' : `create it from ${r.defaultBranch}`}). Default branch: ${r.defaultBranch}. Push the branch when the checks pass.`,
     ].filter(Boolean).join('\n\n');
@@ -787,7 +791,7 @@ async function implementInSandbox(job: Job): Promise<Outcome> {
           repoFullName: `${r.owner}/${r.repo}`,
           token,
           prompt,
-          fileIds: [...await openaiSandboxFileIds(ctx, docs), ...(map ? [map.id] : [])],
+          fileIds: [...await openaiSandboxFileIds(ctx, docs), ...(map ? [map.id] : []), ...(schema ? [schema.id] : [])],
         })), resourceId: null }
       : await startEngineerSession({
           ctx,
@@ -798,7 +802,11 @@ async function implementInSandbox(job: Job): Promise<Outcome> {
           token,
           prompt,
           title: `${reference(job)} — ${job.task.title}`,
-          files: [...await claudeSandboxMounts(ctx, docs), ...(map ? [{ type: 'file' as const, file_id: map.id, mount_path: CODE_MAP_MOUNT }] : [])],
+          files: [
+            ...await claudeSandboxMounts(ctx, docs),
+            ...(map ? [{ type: 'file' as const, file_id: map.id, mount_path: CODE_MAP_MOUNT }] : []),
+            ...(schema ? [{ type: 'file' as const, file_id: schema.id, mount_path: SCHEMA_MOUNT }] : []),
+          ],
         });
     const now = new Date().toISOString();
     await update(job, {
@@ -818,7 +826,7 @@ async function implementInSandbox(job: Job): Promise<Outcome> {
       `Engineer started in ${onOpenAI ? 'an OpenAI' : 'a Claude'} sandbox (${started.model}, ${engineer.tier ?? 'medium'} tier)`,
       {
         session_id: started.sessionId,
-        mounts: onOpenAI ? [] : [...mountNames(docs).map((n) => `${SANDBOX_ATTACHMENTS}/${n}`), ...(map ? [CODE_MAP_MOUNT] : [])],
+        mounts: onOpenAI ? [] : [...mountNames(docs).map((n) => `${SANDBOX_ATTACHMENTS}/${n}`), ...(map ? [CODE_MAP_MOUNT] : []), ...(schema ? [SCHEMA_MOUNT] : [])],
       });
     return { wait: 30 };
   }
@@ -967,6 +975,17 @@ async function implementInSandbox(job: Job): Promise<Outcome> {
     return repairOrFail(job, `${failed.length} check(s) still failing in the sandbox`,
       failed.map((c) => `## ${c.name} (${c.command})\n${(c.output_tail ?? '').slice(-4000)}`).join('\n\n'));
   }
+  const badSql = await dryRunDbChanges(job, client, r).catch((e) => {
+    console.error('could not try the database changes', e);
+    return [] as string[];
+  });
+  if (badSql.length) {
+    return repairOrFail(job, `${badSql.length} database script(s) would fail on the database`, [
+      'Each script was run on the live database inside a transaction and rolled back (nothing was kept). It failed:',
+      ...badSql,
+      `Fix the script(s) on the branch so they apply to the database as it is now (see ${SCHEMA_MOUNT}), and push.`,
+    ].join('\n\n'));
+  }
   return { to: 'testing' };
 }
 
@@ -995,10 +1014,12 @@ function validationReport(job: Job): string {
     sandbox_checks?: { name: string; result: string }[];
     checks?: { name: string; result: string }[];
     inherited_checks?: string[];
+    db_dry_runs?: { path: string; result: string }[];
   };
   const lines = [
     ...(st.sandbox_checks ?? []).map((c) => `- sandbox: ${c.name} — ${c.result}`),
     ...(st.checks ?? []).map((c) => `- GitHub: ${c.name} — ${c.result}`),
+    ...(st.db_dry_runs ?? []).map((d) => `- database: ${d.path} — ${d.result}`),
   ];
   if (!lines.length) return '<validation>No checks were reported for this change.</validation>';
   return [
@@ -1081,6 +1102,80 @@ export async function readTaskBranchFile(taskId: string, path: string): Promise<
   return readFile(client, repoOf(job), path, job.task.branch_name ?? branchFor(job));
 }
 
+/* ---- the linked database, for the agents ------------------------------ */
+
+const SCHEMA_MOUNT = `${SANDBOX_UPLOADS}/database/schema.md`;
+
+/** The linked database's schema, put with the provider for the sandbox; null when there is none. */
+async function schemaUpload(job: Job, ctx: AiContext, onOpenAI: boolean): Promise<{ id: string; tables: number } | null> {
+  const target = await taskDatabase(job.task.id);
+  if (!target) return null;
+  const schema = await readSchema(target.token, target.ref);
+  const text = schemaMarkdown(schema, job.project.name);
+  const id = await uploadProviderCopy(ctx, onOpenAI ? 'openai' : 'anthropic', Buffer.from(text), 'schema.md', 'text/markdown');
+  return { id, tables: schema.tables.length };
+}
+
+function databasePrompt(schema: { tables: number } | null, onOpenAI: boolean): string {
+  if (!schema) return '';
+  const where = onOpenAI ? 'schema.md in the container\'s uploaded files (look under /mnt/data)' : SCHEMA_MOUNT;
+  return [
+    '<database>',
+    `This project is linked to a Supabase database. Its current schema (${schema.tables} tables and views: columns, keys, indexes, RLS policies, functions) is at ${where}. It is a reference, not part of the repository: never commit it.`,
+    onOpenAI ? '' : findHint('schema.md'),
+    'If the plan needs a database change, write it against this schema: check the tables and columns you touch exist (or don\'t yet) as you expect, and keep it safe to run twice (IF NOT EXISTS, additive where you can).',
+    'You have no access to the database itself. After you push, AgentSync tries each script on the database and rolls it back; if one would fail you will get the error to fix. It is applied for real only when a person approves the merge.',
+    '</database>',
+  ].filter(Boolean).join('\n');
+}
+
+/** The linked database's tables and columns, for the Planner. */
+async function plannerDatabaseBlock(job: Job): Promise<string> {
+  try {
+    const target = await taskDatabase(job.task.id);
+    if (!target) return '';
+    const schema = await readSchema(target.token, target.ref);
+    return `<database_tables count="${schema.tables.length}">\nThe project's linked Supabase database, as it is now (table: columns). Plan any database change against it.\n${schemaSummary(schema)}\n</database_tables>`;
+  } catch (e) {
+    console.error('database schema unavailable for the plan', e);
+    return '';
+  }
+}
+
+/**
+ * Tries each database script on the branch against the linked database and
+ * rolls it back. Returns the failures, for the Engineer to fix; records every
+ * result against the script (and for the Reviewer).
+ */
+async function dryRunDbChanges(job: Job, client: Octokit, r: Repo): Promise<string[]> {
+  const paths = await recordDbChanges(job, client, r);
+  if (!paths.length) {
+    await update(job, { stage_state: { db_dry_runs: null } });
+    return [];
+  }
+  const target = await taskDatabase(job.task.id);
+  if (!target) {
+    await update(job, { stage_state: { db_dry_runs: paths.map((p) => ({ path: p, result: 'not tested (no linked database)' })) } });
+    return [];
+  }
+  const { data } = await db().rpc('agentsync_db_changes_for', { p_task_id: job.task.id });
+  const changes = (data ?? []) as { id: string; path: string }[];
+  const branch = job.task.branch_name ?? branchFor(job);
+  const failures: string[] = [];
+  const results: { path: string; result: string }[] = [];
+  for (const c of changes) {
+    const sql = await readFile(client, r, c.path, branch);
+    if (!sql?.trim()) continue;
+    const run = await dryRunSql(target.token, target.ref, sql);
+    const output = run.status === 'failed' ? run.error : run.status === 'skipped' ? run.reason : null;
+    await db().rpc('agentsync_db_change_dry_run', { p_change_id: c.id, p_status: run.status, p_output: output });
+    results.push({ path: c.path, result: run.status === 'passed' ? 'applies cleanly (tried and rolled back)' : run.status === 'failed' ? `WOULD FAIL: ${run.error.slice(0, 300)}` : run.reason });
+    if (run.status === 'failed') failures.push(`## ${c.path}\n${run.error}`);
+  }
+  await update(job, { stage_state: { db_dry_runs: results } });
+  return failures;
+}
+
 /**
  * The SQL this change carries under the project's migration paths. Each is
  * recorded against the task; the merge waits until every one has been run on
@@ -1097,7 +1192,9 @@ async function recordDbChanges(job: Job, client: Octokit, r: Repo): Promise<stri
     p_task_id: job.task.id,
     p_changes: sql.map((f) => ({ path: f.filename, sha: f.sha ?? null })),
   });
-  if (sql.length) {
+  const seen = sql.map((f) => `${f.filename}@${f.sha ?? ''}`).join(',');
+  if (sql.length && job.task.stage_state.db_changes_seen !== seen) {
+    await update(job, { stage_state: { db_changes_seen: seen } });
     await logEvent(job.task.id, 'db.change_detected',
       `This change needs a database change: ${sql.map((f) => f.filename).join(', ')}. The merge waits until it has run on the database.`,
       { paths: sql.map((f) => f.filename) });

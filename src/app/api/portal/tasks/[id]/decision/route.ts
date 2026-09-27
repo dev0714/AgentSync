@@ -3,6 +3,7 @@ import { currentUser } from '@/lib/auth';
 import { closePullRequest, githubFor } from '@/lib/github';
 import { kickWorker } from '@/lib/kick';
 import { cleanupProviderFiles } from '@/lib/attachments';
+import { applyPendingDbChanges, DbChangeError } from '@/lib/db-changes';
 import { recordMapFeedback } from '@/lib/project-maps';
 import { aiContext, loadJob, mapNodesOf, sendCallback } from '@/lib/stages';
 import { serviceClient } from '@/lib/supabase';
@@ -60,6 +61,28 @@ export async function POST(
         { error: 'NOTHING_TO_BUILD', detail: 'The plan changes no files. Send it back with an answer, or reject it.' },
         { status: 409 },
       );
+    }
+  }
+
+  // Approving the merge runs the change's database scripts first, on the
+  // project's linked database: the code merges only once they've applied.
+  // Checked the same way the decision is, before anything runs.
+  if (body.gate === 'merge' && body.decision === 'approved') {
+    const db = serviceClient();
+    const [{ data: allowed }, { data: task }] = await Promise.all([
+      db.rpc('agentsync_can_approve', { p_user_id: user.id, p_task_id: id }),
+      db.schema('agentsync').from('agent_tasks').select('status').eq('id', id).maybeSingle(),
+    ]);
+    if (allowed && task?.status === 'awaiting_merge_approval') {
+      try {
+        await applyPendingDbChanges(id, user.id);
+      } catch (e) {
+        if (!(e instanceof DbChangeError)) throw e;
+        return NextResponse.json(
+          { error: 'DB_CHANGE_FAILED', detail: `Nothing was merged. ${e.message}` },
+          { status: e.status },
+        );
+      }
     }
   }
 

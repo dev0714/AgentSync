@@ -50,7 +50,8 @@ Keep output short — everything you see is re-read on every later step:
 - If the plan cannot be carried out safely, stop and explain why instead of improvising.
 - A database change goes in its own .sql file where the project keeps them (supabase/migrations,
   migrations or scripts), written so it is safe to run twice (IF NOT EXISTS, additive where you
-  can). Never run it against any real database: AgentSync runs it at the merge approval.
+  can). Never run it against any real database: AgentSync tries it on the database and rolls
+  it back after you push, and runs it for real when a person approves the merge.
 
 When you are finished, end your final message with a fenced \`\`\`json block containing
 exactly this object and nothing after it:

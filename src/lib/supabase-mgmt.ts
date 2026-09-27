@@ -43,6 +43,16 @@ export async function inspectToken(token: string): Promise<{ projects: SupabaseP
   return { projects, organizations };
 }
 
+/** Runs a query and returns its rows, in full (runSql keeps only the start of the output). */
+export async function querySql<T = Record<string, unknown>>(token: string, ref: string, sql: string): Promise<T[]> {
+  const res = await call(token, `/projects/${encodeURIComponent(ref)}/database/query`, {
+    method: 'POST',
+    body: JSON.stringify({ query: sql }),
+  });
+  if (!res.ok) throw new Error(await errorOf(res));
+  return (await res.json()) as T[];
+}
+
 /** Runs SQL on a project, as one statement batch. */
 export async function runSql(
   token: string,
