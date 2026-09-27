@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Ago, SetupSteps } from '../ui';
+import SupabaseLinks from './SupabaseLinks';
 
 /**
  * Connecting Supabase, so a change that needs a database change can have it
@@ -148,6 +149,7 @@ export default function SupabaseForm({
               </button>
             </div>
           ) : null}
+          {conn.canEdit ? <SupabaseLinks tenantSlug={tenantSlug} projects={c.projects} /> : null}
         </div>
       ) : (
         <SetupSteps steps={STEPS} />
