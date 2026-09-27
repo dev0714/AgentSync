@@ -132,7 +132,7 @@ export async function openaiEngineerState(ctx: AiContext, responseId: string, mo
   const output = response.usage?.output_tokens ?? 0;
   const usage = { input, output, costCents: Math.round(openaiCostOf(model, input, output) * 100) };
 
-  if (response.status === 'queued' || response.status === 'in_progress') return { state: 'running' };
+  if (response.status === 'queued' || response.status === 'in_progress') return { state: 'running', usage: { input: 0, output: 0, costCents: 0 } };
   if (response.status === 'failed') return { state: 'stopped', reason: response.error?.message ?? 'the OpenAI run failed', usage };
   if (response.status === 'cancelled') return { state: 'stopped', reason: 'the OpenAI run was cancelled', usage };
   if (response.status === 'incomplete') {

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { currentUser } from '@/lib/auth';
 import { loadTask } from '@/lib/portal-data';
+import { serviceClient } from '@/lib/supabase';
 
 /**
  * GET /api/portal/tasks/:id — one task, for the detail screen.
@@ -28,5 +29,21 @@ export async function GET(
     return NextResponse.json({ error: 'NOT_FOUND' }, { status: 404 });
   }
 
-  return NextResponse.json(detail);
+  // While the Engineer's sandbox works: how long and what it has cost so far.
+  // Read only after loadTask has checked the caller may see this task.
+  let live = null;
+  if (detail.task.status === 'implementing' || detail.task.status === 'testing') {
+    const { data } = await serviceClient().schema('agentsync').from('agent_tasks').select('stage_state').eq('id', id).maybeSingle();
+    const st = (data?.stage_state ?? {}) as Record<string, unknown>;
+    if (st.session_id) {
+      live = {
+        started_at: (st.session_started_at as string) ?? null,
+        model: (st.session_model as string) ?? null,
+        usage: (st.session_usage as { input: number; output: number; costCents: number; polled_at: string } | null) ?? null,
+        cap_cents: (st.session_cap_cents as number | null) ?? null,
+      };
+    }
+  }
+
+  return NextResponse.json({ ...detail, live });
 }

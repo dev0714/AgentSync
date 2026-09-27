@@ -5,6 +5,7 @@ import { loadAgent, runAgent, type AiContext, type Credential } from './ai';
 import {
   engineerSessionState,
   rotateSessionToken,
+  SESSION_BUDGET_CENTS,
   startEngineerSession,
   stopEngineerSession,
 } from './managed-engineer';
@@ -380,13 +381,21 @@ async function analyse(job: Job): Promise<Outcome> {
   const inRepo = (f: string) => paths.find((p) => p === f || p.endsWith(`/${f}`) || f.endsWith(`/${p}`)) ?? null;
   const fromMap = [...new Set((map?.files ?? []).map(inRepo).filter((p): p is string => !!p))].slice(0, 6);
 
+  // Best matches in full, the rest shortened, and a ceiling on the whole: the
+  // Planner re-reads all of it, so every extra file is paid for on every plan.
+  const best = new Set([...fromMap, ...scored.slice(0, 4)]);
   const wanted = [...new Set([...KEY_FILES.filter((f) => paths.includes(f)), ...fromMap, ...scored])].slice(0, 20);
   const files: Record<string, string> = {};
+  let total = 0;
   for (const path of wanted) {
     const text = await readFile(client, r, path, r.defaultBranch);
-    if (text !== null) files[path] = text.slice(0, 15_000);
+    if (text === null) continue;
+    const kept = text.slice(0, best.has(path) ? 15_000 : 6_000);
+    if (total + kept.length > 120_000) break;
+    files[path] = kept;
+    total += kept.length;
   }
-  if (map) files['(AgentSync code map — reference only, not a repository file)'] = map.text.slice(0, 18_000);
+  if (map) files['(AgentSync code map — reference only, not a repository file)'] = map.text.slice(0, 12_000);
 
   await update(job, {
     stage_state: { context: { paths: paths.slice(0, 3000), total_paths: paths.length, files }, map_seeds: map?.seeds ?? [] },
@@ -635,6 +644,12 @@ async function implement(job: Job): Promise<Outcome> {
 /* ---- implementing, in a sandbox: the Engineer as a Managed Agent ------- */
 
 const SESSION_LIMIT_MINUTES = 45;
+
+/** The sandbox's spending cap, recorded when the session started (none on OpenAI). */
+function sessionCapCents(job: Job): number | null {
+  const cap = job.task.stage_state.session_cap_cents;
+  return typeof cap === 'number' ? cap : null;
+}
 const TOKEN_ROTATE_MINUTES = 40;
 
 /**
@@ -759,6 +774,8 @@ async function implementInSandbox(job: Job): Promise<Outcome> {
         token_at: now,
         session_model: started.model,
         session_provider: onOpenAI ? 'openai' : 'anthropic',
+        session_cap_cents: onOpenAI ? null : SESSION_BUDGET_CENTS[engineer.tier ?? 'medium'] ?? SESSION_BUDGET_CENTS.medium,
+        session_usage: null,
       },
     });
     await logEvent(job.task.id, 'agent.sandbox_started',
@@ -773,6 +790,10 @@ async function implementInSandbox(job: Job): Promise<Outcome> {
     : await engineerSessionState(ctx, sessionId);
 
   if (status.state === 'running') {
+    // What it has cost so far, for the task page while it works.
+    await update(job, {
+      stage_state: { session_usage: { ...status.usage, polled_at: new Date().toISOString(), cap_cents: sessionCapCents(job) } },
+    });
     const minutes = (Date.now() - Date.parse(state.session_started_at ?? new Date().toISOString())) / 60000;
     if (minutes > SESSION_LIMIT_MINUTES) {
       await (onOpenAI ? stopOpenAIEngineer(ctx, sessionId) : stopEngineerSession(ctx, sessionId));

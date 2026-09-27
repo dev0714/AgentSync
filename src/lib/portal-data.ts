@@ -432,6 +432,13 @@ export type TaskDetail = {
   report: Nullable<Record<string, unknown>>;
   security_findings: SecurityFinding[];
   events: TaskEvent[];
+  /** The Engineer's sandbox while it works (added by the task API route). */
+  live?: {
+    started_at: string | null;
+    model: string | null;
+    usage: { input: number; output: number; costCents: number; polled_at: string } | null;
+    cap_cents: number | null;
+  } | null;
   approvals: {
     gate: string;
     decision: string;

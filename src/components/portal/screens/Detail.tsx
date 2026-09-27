@@ -228,6 +228,10 @@ export default function Detail({
 
       <StepTracker status={task.status} progress={task.progress_percent} stoppedAt={stoppedAt(events)} />
 
+      {detail.live ? (
+        <EngineerLive taskId={task.id} live={detail.live} onStopped={() => setReload((n) => n + 1)} />
+      ) : null}
+
       {task.status === 'failed' ? (
         <RetryBanner
           taskId={task.id}
@@ -860,6 +864,93 @@ function GateBanner({
         </div>
       ) : null}
       {problem ? <div className="text-[13.5px] text-danger-ink">{problem}</div> : null}
+    </section>
+  );
+}
+
+/**
+ * The Engineer at work in its sandbox: how long, what it has cost so far
+ * against its cap, and a way to stop it (which fails the task, so it can be
+ * retried). The server re-checks the person may do this.
+ */
+function EngineerLive({
+  taskId,
+  live,
+  onStopped,
+}: {
+  taskId: string;
+  live: NonNullable<TaskDetail['live']>;
+  onStopped: () => void;
+}) {
+  const router = useRouter();
+  const [now, setNow] = useState(() => Date.now());
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const secs = live.started_at ? Math.max(0, Math.floor((now - Date.parse(live.started_at)) / 1000)) : 0;
+  const elapsed = `${Math.floor(secs / 60)}m ${String(secs % 60).padStart(2, '0')}s`;
+  const spent = live.usage ? live.usage.costCents / 100 : null;
+  const cap = live.cap_cents ? live.cap_cents / 100 : null;
+  const pct = spent !== null && cap ? Math.min(100, (spent / cap) * 100) : 0;
+
+  async function stop() {
+    if (!window.confirm('Stop the Engineer? The task will stop here; you can retry it later.')) return;
+    setBusy(true);
+    setProblem(null);
+    try {
+      const res = await fetch(`/api/portal/tasks/${taskId}/stop`, { method: 'POST' });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setProblem(
+          data.error === 'NOT_AUTHORISED'
+            ? 'Only an approver or admin for this tenant can stop a task.'
+            : data.error === 'NOT_RUNNING'
+              ? 'The Engineer has already finished.'
+              : `Could not stop it (${data.error ?? res.status}).`,
+        );
+        return;
+      }
+      onStopped();
+      router.refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section aria-label="Engineer at work" className="card flex flex-wrap items-center gap-x-5 gap-y-3 px-5 py-3.5">
+      <span className="flex items-center gap-2 text-[14px] font-semibold text-ink">
+        <span className="blink size-2 rounded-full bg-accent" />
+        Engineer working
+      </span>
+      <span className="mono text-[13px] text-muted-2 tabular-nums">{elapsed}</span>
+      {live.model ? <span className="mono text-[12.5px] text-muted-3">{live.model}</span> : null}
+      <span className="flex min-w-[220px] flex-1 items-center gap-3">
+        <span className="text-[13.5px] text-ink-2 tabular-nums">
+          {spent === null ? 'Cost so far: checking…' : `$${spent.toFixed(2)} so far`}
+          {cap ? <span className="text-muted-3"> of ${cap.toFixed(0)} cap</span> : null}
+        </span>
+        {cap ? (
+          <span className="h-1.5 max-w-[180px] flex-1 overflow-hidden rounded-full bg-line-soft" role="presentation">
+            <span
+              className="block h-full rounded-full transition-[width] duration-700"
+              style={{ width: `${pct}%`, background: pct > 80 ? 'var(--color-gate)' : 'var(--color-accent)' }}
+            />
+          </span>
+        ) : null}
+      </span>
+      <button
+        className="min-h-[36px] cursor-pointer rounded-lg px-3 text-[14px] font-medium text-danger-ink hover:bg-danger-tint disabled:opacity-50"
+        disabled={busy}
+        onClick={stop}
+      >
+        {busy ? 'Stopping…' : 'Stop Engineer'}
+      </button>
+      {problem ? <div className="w-full text-[13.5px] text-danger-ink">{problem}</div> : null}
     </section>
   );
 }

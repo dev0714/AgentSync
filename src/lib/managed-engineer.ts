@@ -129,7 +129,8 @@ export async function syncEngineerAgent(credentialKeyRef: string, engineer: Pick
 }
 
 /** Dollar cap per session by tier, in cents. A session at its cap pauses. */
-const BUDGET_CENTS: Record<string, number> = { low: 300, medium: 800, high: 2000 };
+export const SESSION_BUDGET_CENTS: Record<string, number> = { low: 300, medium: 800, high: 2000 };
+const BUDGET_CENTS = SESSION_BUDGET_CENTS;
 
 export async function startEngineerSession(params: {
   ctx: AiContext;
@@ -181,7 +182,7 @@ export async function startEngineerSession(params: {
 }
 
 export type SessionState =
-  | { state: 'running' }
+  | { state: 'running'; usage: SessionUsage }
   | { state: 'done'; report: EngineerReport | null; text: string; usage: SessionUsage }
   | { state: 'stopped'; reason: string; usage: SessionUsage };
 
@@ -211,7 +212,7 @@ export async function engineerSessionState(ctx: AiContext, sessionId: string): P
   const session = await client.beta.sessions.retrieve(sessionId);
   const usage = usageOf(session as never);
 
-  if (session.status === 'running' || session.status === 'rescheduling') return { state: 'running' };
+  if (session.status === 'running' || session.status === 'rescheduling') return { state: 'running', usage };
   if (session.status === 'terminated') return { state: 'stopped', reason: 'the sandbox session ended unexpectedly', usage };
 
   // idle: why did it stop? Read the latest events and pick out what we need.

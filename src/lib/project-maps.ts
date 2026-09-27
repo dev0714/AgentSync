@@ -580,6 +580,8 @@ export type Impact = {
  * changes (`affected`, two steps), and the hubs among them — the code most of
  * the project leans on, where a change needs the closest review.
  */
+const MANIFEST = /(^|\/)(package\.json|package-lock\.json|pnpm-lock\.yaml|yarn\.lock|tsconfig[^/]*\.json|jsconfig\.json|composer\.json|go\.mod|go\.sum|Cargo\.(toml|lock)|pyproject\.toml|requirements[^/]*\.txt)$/;
+
 export async function planImpact(projectId: string, files: string[]): Promise<Impact | null> {
   const graph = await loadCodeGraph(projectId);
   if (!graph || !files.length) return null;
@@ -589,7 +591,9 @@ export async function planImpact(projectId: string, files: string[]): Promise<Im
   const sections: string[] = [];
   const outside = new Set<string>();
   let dependents = 0;
-  for (const path of files) {
+  // Manifests and config (package.json, tsconfig, lockfiles) are "imported" by
+  // everything; counting that as impact buries the real callers.
+  for (const path of files.filter((f) => !MANIFEST.test(f))) {
     const hits = affectedByFile(graph, path).filter((h) => !files.some((f) => h.node.source_file && (f === h.node.source_file || f.endsWith(`/${h.node.source_file}`))));
     dependents += hits.length;
     for (const h of hits) if (h.node.source_file) outside.add(h.node.source_file);
