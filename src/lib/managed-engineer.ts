@@ -237,8 +237,15 @@ export async function engineerSessionState(ctx: AiContext, sessionId: string): P
 
   // idle: why did it stop? Read the latest events and pick out what we need.
   const recent = await client.beta.sessions.events.list(sessionId, { order: 'desc', limit: 100 } as never);
-  const events = (recent.data ?? []) as { type: string; stop_reason?: { type?: string }; content?: { type: string; text?: string }[] }[];
-  const idle = events.find((e) => e.type === 'session.status_idle' || e.type === 'status_idle');
+  const all = (recent.data ?? []) as { type: string; stop_reason?: { type?: string }; content?: { type: string; text?: string }[] }[];
+  // Only the latest turn counts: everything newer than the last message we sent.
+  // A message it has not picked up yet (no idle after it) means it is still working.
+  const isIdle = (e: { type: string }) => e.type === 'session.status_idle' || e.type === 'status_idle';
+  const lastSent = all.findIndex((e) => e.type === 'user.message');
+  const lastIdle = all.findIndex(isIdle);
+  if (lastSent !== -1 && (lastIdle === -1 || lastSent < lastIdle)) return { state: 'running', usage };
+  const events = lastSent === -1 ? all : all.slice(0, lastSent);
+  const idle = events.find(isIdle);
   const reason = idle?.stop_reason?.type ?? 'end_turn';
   if (reason === 'budget_reached') return { state: 'stopped', reason: 'the session reached its spending cap for this tier', usage };
   if (reason === 'requires_action') return { state: 'stopped', reason: 'the session is waiting for a tool confirmation it should not need', usage };
@@ -269,6 +276,18 @@ export async function engineerSessionState(ctx: AiContext, sessionId: string): P
 export async function rotateSessionToken(ctx: AiContext, sessionId: string, resourceId: string, token: string) {
   const client = await clientFor(ctx);
   await client.beta.sessions.resources.update(resourceId, { session_id: sessionId, authorization_token: token });
+}
+
+/**
+ * Send more work to a session that has finished its turn: the fix after a
+ * failed check, a reviewer's changes, a retry. It keeps everything it already
+ * read and installed, so this costs a fraction of a new session.
+ */
+export async function continueEngineerSession(ctx: AiContext, sessionId: string, text: string) {
+  const client = await clientFor(ctx);
+  await client.beta.sessions.events.send(sessionId, {
+    events: [{ type: 'user.message', content: [{ type: 'text', text }] }],
+  } as never);
 }
 
 export async function stopEngineerSession(ctx: AiContext, sessionId: string) {

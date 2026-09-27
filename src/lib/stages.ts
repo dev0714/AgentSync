@@ -3,8 +3,10 @@ import { createHash, createHmac } from 'node:crypto';
 import type { Octokit } from '@octokit/rest';
 import { loadAgent, runAgent, type AiContext, type Credential } from './ai';
 import {
+  continueEngineerSession,
   engineerSessionState,
   rotateSessionToken,
+  type SessionUsage,
   SESSION_BUDGET_CENTS,
   type BaselineCheck,
   type EngineerReport,
@@ -741,7 +743,15 @@ async function implementInSandbox(job: Job): Promise<Outcome> {
     throw new StageFailed('BUDGET_EXCEEDED', `project has spent its $${ctx.monthlyBudget} monthly AI budget`);
   }
 
-  // No session yet: start one.
+  // No session running: send the work back to the last one if it can take it,
+  // else start a new one.
+  if (!state.session_id && !onOpenAI) {
+    const resumed = await resumeLastSession(job, ctx, branch).catch((e) => {
+      console.error('could not resume the last Engineer session', e);
+      return null;
+    });
+    if (resumed) return { wait: 30 };
+  }
   if (!state.session_id) {
     const client = await gh(job);
     const exists = (await branchSha(client, r, branch)) !== null;
@@ -837,18 +847,33 @@ async function implementInSandbox(job: Job): Promise<Outcome> {
     return { wait: 30 };
   }
 
-  // The session has finished its turn (or stopped): record what it cost.
+  // The session has finished its turn (or stopped): record what this turn cost
+  // (a resumed session reports its running total, so take off what came before).
+  const base = (job.task.stage_state.usage_base ?? { input: 0, output: 0, costCents: 0 }) as SessionUsage;
   await serviceClient().rpc('agentsync_record_ai_usage', {
     p_task_id: job.task.id,
     p_agent_key: 'engineer',
     p_model: state.session_model ?? 'claude-opus-5-5',
-    p_input_tokens: status.usage.input,
-    p_output_tokens: status.usage.output,
-    p_cost: status.usage.costCents / 100,
+    p_input_tokens: Math.max(0, status.usage.input - base.input),
+    p_output_tokens: Math.max(0, status.usage.output - base.output),
+    p_cost: Math.max(0, status.usage.costCents - base.costCents) / 100,
     p_duration_seconds: (Date.now() - Date.parse(state.session_started_at ?? new Date().toISOString())) / 1000,
     p_provider: onOpenAI ? 'openai' : 'anthropic',
   });
-  await update(job, { stage_state: { session_id: null, resource_id: null, session_provider: null, repair_feedback: null } });
+  await update(job, {
+    stage_state: {
+      session_id: null, resource_id: null, session_provider: null, repair_feedback: null, usage_base: null,
+      // Kept so the next round of work can go back to this same session.
+      last_session: status.state === 'done' && !onOpenAI ? {
+        id: sessionId,
+        resource_id: state.resource_id ?? null,
+        model: state.session_model ?? null,
+        cap_cents: job.task.stage_state.session_cap_cents ?? null,
+        usage: status.usage,
+        ended_at: new Date().toISOString(),
+      } : null,
+    },
+  });
 
   if (status.state === 'stopped') throw new StageFailed('SANDBOX_STOPPED', status.reason);
   const report = status.report;
@@ -932,6 +957,7 @@ async function implementInSandbox(job: Job): Promise<Outcome> {
   const failed = (report.checks ?? []).filter((c) => !c.passed && !preExisting(c, baseline));
   const inherited = (report.checks ?? []).filter((c) => !c.passed && preExisting(c, baseline));
   await saveBaseline(job, client, r, report, inherited).catch((e) => console.error('could not save the check baseline', e));
+  await update(job, { stage_state: { inherited_checks: inherited.map((c) => c.name) } });
   if (inherited.length) {
     await logEvent(job.task.id, 'agent.checks_inherited',
       `Already failing on ${r.defaultBranch}, not repaired: ${inherited.map((c) => c.name).join(', ')}`.slice(0, 1500));
@@ -956,6 +982,95 @@ function preExisting(
   if (baseline?.checks.some((b) => !b.passed && key(b).some((k) => key(c).includes(k)))) return true;
   const text = `${c.name ?? ''}\n${c.output_tail ?? ''}`;
   return /pre-?existing|identical (first )?(failures?|errors?)[^\n]*\bmain\b|same \d* ?failing|(also )?fails? (the same way )?on (main|master|the default branch)|no new errors|on both branch and main/i.test(text);
+}
+
+/**
+ * What was run on this change, for the Reviewer: the Engineer's own checks in
+ * the sandbox, the GitHub checks, and which failures were already on the
+ * default branch before it.
+ */
+function validationReport(job: Job): string {
+  const st = job.task.stage_state as {
+    sandbox_checks?: { name: string; result: string }[];
+    checks?: { name: string; result: string }[];
+    inherited_checks?: string[];
+  };
+  const lines = [
+    ...(st.sandbox_checks ?? []).map((c) => `- sandbox: ${c.name} — ${c.result}`),
+    ...(st.checks ?? []).map((c) => `- GitHub: ${c.name} — ${c.result}`),
+  ];
+  if (!lines.length) return '<validation>No checks were reported for this change.</validation>';
+  return [
+    '<validation>',
+    ...lines,
+    st.inherited_checks?.length
+      ? `Already failing on the default branch before this change (not caused by it, not to be fixed here): ${st.inherited_checks.join(', ')}.`
+      : '',
+    '</validation>',
+  ].filter(Boolean).join('\n');
+}
+
+type LastSession = {
+  id: string;
+  resource_id: string | null;
+  model: string | null;
+  cap_cents: number | null;
+  usage: SessionUsage;
+  ended_at: string;
+};
+
+const RESUME_WITHIN_HOURS = 6;
+const RESUME_MIN_LEFT_CENTS = 100;
+
+/**
+ * Hand new work (a failed check, a reviewer's or a person's changes, a retry)
+ * to the Engineer session that did the last round, while it is idle, recent
+ * and has budget left — it already has the repository, its packages and the
+ * whole conversation. Returns false when a new session is needed.
+ */
+async function resumeLastSession(job: Job, ctx: AiContext, branch: string): Promise<boolean> {
+  const last = job.task.stage_state.last_session as LastSession | null | undefined;
+  if (!last?.id || !last.resource_id) return false;
+  const hours = (Date.now() - Date.parse(last.ended_at)) / 3_600_000;
+  const left = last.cap_cents === null ? Infinity : last.cap_cents - last.usage.costCents;
+  if (hours > RESUME_WITHIN_HOURS || left < RESUME_MIN_LEFT_CENTS) return false;
+  const now = await engineerSessionState(ctx, last.id);
+  if (now.state !== 'done') return false;
+
+  const client = await gh(job);
+  const r = repoOf(job);
+  await rotateSessionToken(ctx, last.id, last.resource_id, await installationToken(job.github));
+  const repair = job.task.stage_state.repair_feedback as string | null | undefined;
+  const known = await baselineBlock(job, client, r).catch(() => '');
+  const why = repair
+    ? `<previous_attempt_failed>\n${repair}\n</previous_attempt_failed>\nFix the cause of these failures on the same branch. Failures that are pre-existing on ${r.defaultBranch} stay as they are.`
+    : humanFeedback(job) || `The task was retried. Carry on from where you stopped: make sure ${branch} holds the approved plan's change, the checks have run, and the branch is pushed.`;
+  const text = [
+    why,
+    humanFeedback(job) && repair ? humanFeedback(job) : '',
+    known,
+    `Branch: ${branch}. Your GitHub access was renewed. When done, end with the same fenced json report as before.`,
+  ].filter(Boolean).join('\n\n');
+  await continueEngineerSession(ctx, last.id, text);
+
+  const at = new Date().toISOString();
+  await update(job, {
+    stage_state: {
+      session_id: last.id,
+      resource_id: last.resource_id,
+      session_started_at: at,
+      token_at: at,
+      session_model: last.model,
+      session_provider: 'anthropic',
+      session_cap_cents: last.cap_cents,
+      session_usage: null,
+      usage_base: now.usage,
+    },
+  });
+  await logEvent(job.task.id, 'agent.sandbox_resumed',
+    `Sent back to the same Engineer session (${last.model ?? 'Claude'}, $${(now.usage.costCents / 100).toFixed(2)} spent so far): ${repair ? 'fix the failing checks' : humanFeedback(job) ? 'requested changes' : 'retry'}`,
+    { session_id: last.id });
+  return true;
 }
 
 /**
@@ -1222,6 +1337,7 @@ async function test(job: Job): Promise<Outcome> {
       taskBrief(job),
       `<approved_plan>\n${job.plan?.summary ?? ''}\n</approved_plan>`,
       `<diff>\n${diff}\n</diff>`,
+      validationReport(job),
       `<project_description path="AGENTSYNC.md">\n${(await projectDescription(job)) ?? '(this project has no AGENTSYNC.md yet)'}\n</project_description>`,
       impactOf(job) ? `<code_map_impact>\nFrom the project's code map: what depends on the files this change touches. Check the diff doesn't break these callers, and look hardest at any hub.\n${impactOf(job)!.text}\n</code_map_impact>` : '',
       'Judge every acceptance criterion separately, and check the change against any attached documents too. verdict "submit" means ready for a person to approve the merge; "changes" means the Engineer should fix what you list; "reject" means the approach is wrong.',
