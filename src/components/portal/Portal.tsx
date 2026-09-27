@@ -270,7 +270,12 @@ export default function Portal({
               />
             ) : null}
             {screen === "deployments" ? (
-              <Deployments deployments={data.deployments} />
+              <Deployments
+                deployments={data.deployments}
+                tenantSlug={data.tenant?.slug ?? null}
+                onOpenTask={(id) => openTask(id)}
+                onConnect={() => { setConnTab("deploy"); setScreen("connections"); }}
+              />
             ) : null}
             {screen === "audit" ? <Audit audit={data.audit} /> : null}
             {screen === "project" ? (

@@ -6,10 +6,11 @@ import { useState } from 'react';
 /**
  * Recording the deployment provider, from the browser.
  *
- * As with GitHub, the API token is not a field — only the name of the
- * environment variable holding it. A Vercel token is an unremarkable
- * 24-character string, so "that is a reference, not a secret" is checked in the
- * database rather than assumed: a value with no scheme is refused.
+ * A Vercel token can be pasted: it is checked with Vercel, stored encrypted
+ * and never shown again; the connection keeps only its reference (db:…).
+ * Or give a reference to an environment variable (env:NAME). A token typed
+ * into the reference field is refused by the database — a value with no
+ * scheme is not a reference.
  */
 
 const MESSAGES: Record<string, string> = {
@@ -25,6 +26,7 @@ const MESSAGES: Record<string, string> = {
   BAD_PRODUCTION_TRIGGER: 'Choose what promotes a build to production.',
   PROMOTION_CONTRADICTION:
     'Promoting through the provider API while production is triggered manually contradicts itself. Pick one.',
+  TOKEN_REFUSED: 'Vercel refused that token.',
   INTERNAL_ERROR: 'Could not save. Nothing was changed.',
 };
 
@@ -83,6 +85,10 @@ export default function DeploymentForm({
     String(existing?.api_token_reference ?? 'env:VERCEL_API_TOKEN'),
   );
   const [scope, setScope] = useState(String(existing?.token_scope ?? ''));
+  const [token, setToken] = useState('');
+  const [byReference, setByReference] = useState(
+    Boolean(existing?.api_token_reference && String(existing.api_token_reference).startsWith('env:')),
+  );
   const [previewOn, setPreviewOn] = useState(
     String(existing?.preview_on ?? 'pull_request'),
   );
@@ -109,7 +115,8 @@ export default function DeploymentForm({
         tenant_slug: tenantSlug,
         provider,
         team_id: teamId,
-        api_token_reference: tokenRef,
+        api_token_reference: byReference || !token.trim() ? tokenRef : '',
+        api_token: !byReference && token.trim() ? token.trim() : undefined,
         token_scope: scope,
         preview_on: previewOn,
         production_trigger: productionTrigger,
@@ -129,6 +136,7 @@ export default function DeploymentForm({
       return setError(body.detail ? `${message} (${body.detail})` : message);
     }
 
+    setToken('');
     router.refresh();
   }
 
@@ -174,17 +182,36 @@ export default function DeploymentForm({
           />
         </Field>
 
-        <Field
-          label="api_token_reference"
-          hint="The name of the environment variable holding the token, with a scheme. The token itself is refused."
-        >
-          <input
-            className="field-input"
-            value={tokenRef}
-            onChange={(e) => setTokenRef(e.target.value)}
-            required
-          />
-        </Field>
+        {byReference || provider !== 'vercel' ? (
+          <Field
+            label="api_token_reference"
+            hint="The name of the environment variable holding the token, with a scheme (env:VERCEL_API_TOKEN)."
+          >
+            <input
+              className="field-input"
+              value={tokenRef}
+              onChange={(e) => setTokenRef(e.target.value)}
+              required
+            />
+          </Field>
+        ) : (
+          <Field
+            label="api_token"
+            hint={existing
+              ? `Stored as ${String(existing.api_token_reference ?? '—')}. Paste a new one to replace it.`
+              : 'Vercel → Account Settings → Tokens → Create. Checked with Vercel, then stored encrypted.'}
+          >
+            <input
+              className="field-input mono"
+              type="password"
+              autoComplete="off"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              placeholder={existing ? '•••••••• (unchanged)' : 'Paste the token'}
+              required={!existing}
+            />
+          </Field>
+        )}
       </div>
 
       <Field
@@ -195,10 +222,16 @@ export default function DeploymentForm({
           className="field-input"
           value={scope}
           onChange={(e) => setScope(e.target.value)}
-          placeholder="Read and deploy, AgentSync project only"
-          required
+          placeholder="Read deployments"
+          required={byReference}
         />
       </Field>
+      {provider === 'vercel' ? (
+        <label className="flex items-center gap-2 text-[13px] text-muted-3">
+          <input type="checkbox" className="size-4 accent-[var(--color-ink)]" checked={byReference} onChange={(e) => setByReference(e.target.checked)} />
+          The token lives in an environment variable instead — give its reference
+        </label>
+      ) : null}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         <Field label="preview_on" hint="When a preview build is created.">

@@ -221,21 +221,81 @@ function ApprovalHistory({ tenantSlug, onOpen }: { tenantSlug: string | null; on
 }
 
 const DEP_GRID =
-  'grid min-w-[900px] grid-cols-[120px_minmax(260px,1fr)_100px_190px_90px_100px] items-center gap-4';
+  'grid min-w-[1000px] grid-cols-[110px_minmax(240px,1.3fr)_minmax(180px,1fr)_80px_170px_80px_90px] items-center gap-4';
 
 type EnvFilter = 'all' | 'preview' | 'production';
 
-export function Deployments({ deployments }: { deployments: DeploymentRow[] }) {
+type Deployment = DeploymentRow & { project?: string | null; task_id?: string | null; task_title?: string | null };
+type SyncState = { connected: boolean; provider: string | null; last_synced_at: string | null; error: string | null };
+
+export function Deployments({
+  deployments: initial,
+  tenantSlug,
+  onOpenTask,
+  onConnect,
+}: {
+  deployments: DeploymentRow[];
+  tenantSlug: string | null;
+  onOpenTask?: (id: string) => void;
+  onConnect?: () => void;
+}) {
   const [env, setEnv] = useState<EnvFilter>('all');
-  if (deployments.length === 0) {
+  const [list, setList] = useState<Deployment[]>(initial);
+  const [sync, setSync] = useState<SyncState | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  async function load(refresh: boolean) {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/portal/deployments?tenant=${encodeURIComponent(tenantSlug ?? '')}${refresh ? '&refresh=1' : ''}`, { cache: 'no-store' });
+      const d = (await res.json().catch(() => ({}))) as { deployments?: Deployment[]; sync?: SyncState };
+      if (res.ok) {
+        setList(d.deployments ?? []);
+        setSync(d.sync ?? null);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void load(false);
+    // Builds finish in a minute or two: look again while the screen is open.
+    const id = setInterval(() => { if (document.visibilityState === 'visible') void load(false); }, 60_000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantSlug]);
+
+  const syncLine = sync?.error ? (
+    <span className="text-danger-ink">Could not read deployments from {sync.provider ?? 'the provider'}: {sync.error}</span>
+  ) : sync?.last_synced_at ? (
+    <>Read from {sync.provider === 'vercel' ? 'Vercel' : sync.provider} <Ago iso={sync.last_synced_at} /> ago</>
+  ) : null;
+
+  if (list.length === 0) {
+    const notConnected = sync !== null && !sync.connected;
     return (
-      <Empty
-        title="Nothing has been deployed"
-        detail="Preview and production deployments are recorded here once a deployment provider is connected and a task reaches the pull-request stage."
-        table="agentsync.deployments"
-      />
+      <div className="card flex flex-col items-start gap-3 p-8">
+        <div className="text-[15px] font-semibold text-ink-2">
+          {loading && !sync ? 'Reading deployments…' : notConnected ? 'Connect Vercel to see deployments' : 'Nothing has been deployed yet'}
+        </div>
+        <div className="max-w-[66ch] text-[14px] text-muted" style={{ lineHeight: 1.6 }}>
+          {notConnected
+            ? 'Your projects deploy through Vercel, which builds each push by itself. AgentSync reads what it built — previews for task branches, production for merges — and ties each deployment to its project and task. Give it a Vercel token under Connections → Deployment.'
+            : 'Deployments from the last 30 days of your projects’ repositories appear here, matched to the task that produced them.'}
+        </div>
+        {syncLine ? <div className="text-[13px] text-muted-3">{syncLine}</div> : null}
+        <div className="flex flex-wrap gap-2">
+          {notConnected && onConnect ? <button className="btn-primary" onClick={onConnect}>Connect Vercel</button> : null}
+          {sync?.connected ? (
+            <button className="btn" disabled={loading} onClick={() => void load(true)}>{loading ? 'Reading…' : 'Refresh'}</button>
+          ) : null}
+        </div>
+      </div>
     );
   }
+
+  const deployments = list;
   const isProd = (d: DeploymentRow) => d.environment.toLowerCase() === 'production';
   const liveProd = deployments.find((d) => isProd(d) && d.status === 'READY') ?? null;
   const waiting = deployments.filter((d) => d.status === 'AWAITING_APPROVAL');
@@ -249,7 +309,7 @@ export function Deployments({ deployments }: { deployments: DeploymentRow[] }) {
           title="Live in production"
           tone={liveProd ? 'ok' : 'off'}
           state={liveProd ? 'Ready' : 'Nothing yet'}
-          line={liveProd ? <>Commit <span className="mono">{liveProd.commit_sha?.slice(0, 7) ?? '—'}</span> · <Ago iso={liveProd.finished_at ?? liveProd.started_at} /> ago</> : 'No production release has finished.'}
+          line={liveProd ? <>{liveProd.project ? `${liveProd.project} · ` : ''}Commit <span className="mono">{liveProd.commit_sha?.slice(0, 7) ?? '—'}</span> · <Ago iso={liveProd.finished_at ?? liveProd.started_at} /> ago</> : 'No production release has finished.'}
           url={liveProd?.url ?? null}
         />
         <Summary
@@ -263,7 +323,7 @@ export function Deployments({ deployments }: { deployments: DeploymentRow[] }) {
           title="Building now"
           tone={building.length ? 'agent' : 'off'}
           state={building.length ? `${building.length} building` : 'Idle'}
-          line={building.length ? (building[0].branch ?? 'preview') : 'No build is running.'}
+          line={building.length ? `${building[0].project ? `${building[0].project} · ` : ''}${building[0].branch ?? 'preview'}` : 'No build is running.'}
           url={null}
         />
       </div>
@@ -283,45 +343,67 @@ export function Deployments({ deployments }: { deployments: DeploymentRow[] }) {
               ]}
             />
             <div className="flex-1" />
+            {syncLine ? <span className="text-[12.5px] text-muted-3">{syncLine}</span> : null}
             <span className="text-[12.5px] text-muted-3">{shown.length} of {deployments.length}</span>
+            {sync?.connected ? (
+              <button className="btn" disabled={loading} onClick={() => void load(true)}>{loading ? 'Reading…' : 'Refresh'}</button>
+            ) : null}
           </div>
         }
       >
         <div className={`${DEP_GRID} border-b border-line-soft bg-raised px-4 py-[9px]`}>
           <ColLabel>Environment</ColLabel>
           <ColLabel>Address and branch</ColLabel>
+          <ColLabel>Project and task</ColLabel>
           <ColLabel>Commit</ColLabel>
           <ColLabel>Status</ColLabel>
           <ColLabel>Took</ColLabel>
           <ColLabel right>Started</ColLabel>
         </div>
-        {shown.map((dp) => (
-          <div key={dp.id} className={`${DEP_GRID} border-b border-line-faint px-4 py-3`}>
-            <span className={`text-[13.5px] ${isProd(dp) ? 'font-semibold text-ink' : 'text-muted-3'}`}>
-              {isProd(dp) ? 'Production' : dp.environment.charAt(0).toUpperCase() + dp.environment.slice(1)}
-            </span>
-            <div className="min-w-0">
-              {dp.url ? (
-                <a href={dp.url} target="_blank" rel="noreferrer" className="mono block truncate text-[12.5px] text-agent-ink">
-                  {dp.url.replace(/^https?:\/\//, '')}
-                </a>
-              ) : (
-                <span className="mono text-[12.5px] text-muted-3">—</span>
-              )}
-              <div className="mono truncate text-[12px] text-muted-3">{dp.branch ?? '—'}</div>
+        {shown.map((dp) => {
+          const t = dp.task_title ? ticketOf(dp.task_title, '') : null;
+          return (
+            <div key={dp.id} className={`${DEP_GRID} border-b border-line-faint px-4 py-3`}>
+              <span className={`text-[13.5px] ${isProd(dp) ? 'font-semibold text-ink' : 'text-muted-3'}`}>
+                {isProd(dp) ? 'Production' : dp.environment.charAt(0).toUpperCase() + dp.environment.slice(1)}
+              </span>
+              <div className="min-w-0">
+                {dp.url ? (
+                  <a href={dp.url} target="_blank" rel="noreferrer" className="mono block truncate text-[12.5px] text-agent-ink">
+                    {dp.url.replace(/^https?:\/\//, '')}
+                  </a>
+                ) : (
+                  <span className="mono text-[12.5px] text-muted-3">—</span>
+                )}
+                <div className="mono truncate text-[12px] text-muted-3">{dp.branch ?? '—'}</div>
+              </div>
+              <div className="min-w-0">
+                <div className="truncate text-[13.5px] text-ink-2">{dp.project ?? '—'}</div>
+                {dp.task_id && t ? (
+                  <button
+                    type="button"
+                    className="block max-w-full cursor-pointer truncate text-left text-[12.5px] text-agent-ink hover:underline"
+                    onClick={() => onOpenTask?.(dp.task_id!)}
+                  >
+                    {t.ref ? `${t.ref} · ` : ''}{t.title}
+                  </button>
+                ) : (
+                  <div className="text-[12.5px] text-muted-3">Not from a task</div>
+                )}
+              </div>
+              <span className="mono text-[12.5px] text-muted-3">{dp.commit_sha ? dp.commit_sha.slice(0, 7) : '—'}</span>
+              <div>
+                <Pill c={swatch(DEPLOYMENT_STATUS_COLOUR, dp.status)}>
+                  {dp.status === 'AWAITING_APPROVAL' ? 'Waiting for approval' : dp.status}
+                </Pill>
+              </div>
+              <span className="text-[13px] text-muted-3 tabular-nums">{duration(dp.build_duration_seconds)}</span>
+              <span className="text-right text-[12.5px] text-muted-3">
+                <Ago iso={dp.started_at} /> ago
+              </span>
             </div>
-            <span className="mono text-[12.5px] text-muted-3">{dp.commit_sha ? dp.commit_sha.slice(0, 7) : '—'}</span>
-            <div>
-              <Pill c={swatch(DEPLOYMENT_STATUS_COLOUR, dp.status)}>
-                {dp.status === 'AWAITING_APPROVAL' ? 'Waiting for approval' : dp.status}
-              </Pill>
-            </div>
-            <span className="text-[13px] text-muted-3 tabular-nums">{duration(dp.build_duration_seconds)}</span>
-            <span className="text-right text-[12.5px] text-muted-3">
-              <Ago iso={dp.started_at} /> ago
-            </span>
-          </div>
-        ))}
+          );
+        })}
         {shown.length === 0 ? <div className="px-4 py-6 text-[14px] text-muted-3">Nothing in this environment.</div> : null}
       </TableCard>
     </div>
