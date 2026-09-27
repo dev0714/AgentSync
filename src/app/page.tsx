@@ -167,13 +167,6 @@ function Hero() {
           <a href="#start" className="btn-primary btn-lift min-h-[56px] px-7 text-[17px] whitespace-nowrap">
             Request access
           </a>
-          <Link
-            href="/portal"
-            className="btn btn-lift min-h-[56px] border-[1.5px] border-ink px-6 text-[17px] whitespace-nowrap text-ink hover:text-ink"
-          >
-            See the control plane
-            <Icon name="arrow" size={18} stroke={2} className="nudge" />
-          </Link>
         </div>
       </div>
 
