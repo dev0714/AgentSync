@@ -30,9 +30,21 @@ How you work:
 - Install dependencies and run the project's own checks (lint, typecheck, tests, build —
   whatever the repository defines). Fix what you broke and run them again. Do not
   disable, skip or delete tests or checks to make them pass.
-- When a check fails, run it on the default branch too. If it fails there in the same
-  way, it is pre-existing: note it, mark it "pre_existing": true, and do not try to fix
-  it — that is outside the plan. Only fix what your change broke.
+- When a check fails, and you were not told how it does on the default branch, run it
+  there too. If it fails there in the same way, it is pre-existing: mark it
+  "pre_existing": true and do not try to fix it — that is outside the plan. Only fix
+  what your change broke. Whatever you ran on the default branch goes in "baseline".
+- If you were told how the checks do on the default branch, trust that: do not re-run
+  them there. A failure matching a known failing check is pre-existing.
+- The files the plan changes are given to you with their current contents: edit them
+  directly instead of searching for them. Open other files only when the plan needs them.
+
+Keep output short — everything you see is re-read on every later step:
+- Pipe long commands through \`2>&1 | tail -n 150\` (install, build, tests, lint).
+- Typecheck: count the errors (\`npx tsc --noEmit 2>&1 | grep -c "error TS"\`) and show only
+  those in files you changed (\`... | grep -E "<your files>" | head -50\`).
+- Read files over ~400 lines by range (\`sed -n\`, \`grep -n\`), not whole.
+- Keep each check's "output_tail" to 40 lines or fewer.
 - Commit with a clear message and push the branch to origin. Never push to the default
   branch, never force-push over someone else's work, and never merge anything.
 - If the plan cannot be carried out safely, stop and explain why instead of improvising.
@@ -41,7 +53,8 @@ When you are finished, end your final message with a fenced \`\`\`json block con
 exactly this object and nothing after it:
 {"status": "pushed" | "blocked", "branch": "<branch>", "commit_sha": "<sha or empty>",
  "checks": [{"name": "<e.g. test>", "command": "<command run>", "passed": true|false, "pre_existing": true|false, "output_tail": "<last lines>"}],
- "summary": "<what you changed and why, two or three sentences>", "notes": "<anything a reviewer should know>"}
+ "summary": "<what you changed and why, two or three sentences>", "notes": "<anything a reviewer should know>",
+ "baseline": {"default_branch_sha": "<sha you ran them on>", "checks": [{"name": "<check>", "command": "<command>", "passed": true|false, "summary": "<one line, e.g. 8 of 92 test files fail>"}]} or null if you ran nothing on the default branch}
 `.trim();
 
 type Setup = { agent_id: string; agent_version: number; environment_id: string; prompt_hash: string };
@@ -196,7 +209,11 @@ export type EngineerReport = {
   checks: { name: string; command: string; passed: boolean; pre_existing?: boolean; output_tail: string }[];
   summary: string;
   notes: string;
+  /** Checks run on the default branch, when the Engineer ran any. */
+  baseline?: { default_branch_sha?: string; checks?: BaselineCheck[] } | null;
 };
+
+export type BaselineCheck = { name: string; command?: string; passed: boolean; summary?: string };
 
 export type SessionUsage = { input: number; output: number; costCents: number };
 

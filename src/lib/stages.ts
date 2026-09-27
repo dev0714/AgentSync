@@ -6,6 +6,8 @@ import {
   engineerSessionState,
   rotateSessionToken,
   SESSION_BUDGET_CENTS,
+  type BaselineCheck,
+  type EngineerReport,
   startEngineerSession,
   stopEngineerSession,
 } from './managed-engineer';
@@ -729,6 +731,8 @@ async function implementInSandbox(job: Job): Promise<Outcome> {
     const docs = await readyAttachments(job.task.id);
     // The code map goes into the sandbox too, for Graphify's own lookups.
     const map = await codeMapUpload(job, ctx, onOpenAI).catch((e) => { console.error('code map upload failed', e); return null; });
+    const planFiles = await planFilesBlock(client, r, planned, exists ? branch : r.defaultBranch);
+    const known = await baselineBlock(job, client, r).catch((e) => { console.error('check baseline unavailable', e); return ''; });
     const prompt = [
       taskBrief(job),
       `<approved_plan version="${job.plan?.version}">\n${job.plan?.summary}\n\nSteps:\n${JSON.stringify(job.plan?.steps, null, 2)}\n\nFiles you may change:\n${planned.join('\n')}\n\nTesting plan: ${job.plan?.testing_plan ?? 'run the project checks'}\n</approved_plan>`,
@@ -736,6 +740,8 @@ async function implementInSandbox(job: Job): Promise<Outcome> {
       state.repair_feedback
         ? `<previous_attempt_failed>\n${state.repair_feedback}\n</previous_attempt_failed>\nFix the cause of these failures on the same branch.`
         : '',
+      planFiles,
+      known,
       memory,
       codeMapPrompt(job, map, onOpenAI),
       sandboxAttachmentPrompt(docs, onOpenAI ? 'openai' : 'claude'),
@@ -892,8 +898,10 @@ async function implementInSandbox(job: Job): Promise<Outcome> {
   // change: repairing it is outside the plan and burns a whole sandbox session.
   // It stays on record (and in the pull request) as failing; only new failures
   // send the Engineer back.
-  const failed = (report.checks ?? []).filter((c) => !c.passed && !preExisting(c));
-  const inherited = (report.checks ?? []).filter((c) => !c.passed && preExisting(c));
+  const baseline = await loadBaseline(job.task.project_id);
+  const failed = (report.checks ?? []).filter((c) => !c.passed && !preExisting(c, baseline));
+  const inherited = (report.checks ?? []).filter((c) => !c.passed && preExisting(c, baseline));
+  await saveBaseline(job, client, r, report, inherited).catch((e) => console.error('could not save the check baseline', e));
   if (inherited.length) {
     await logEvent(job.task.id, 'agent.checks_inherited',
       `Already failing on ${r.defaultBranch}, not repaired: ${inherited.map((c) => c.name).join(', ')}`.slice(0, 1500));
@@ -905,11 +913,103 @@ async function implementInSandbox(job: Job): Promise<Outcome> {
   return { to: 'testing' };
 }
 
-/** The Engineer marked it, or its output says it fails the same way on the default branch. */
-function preExisting(c: { pre_existing?: boolean; output_tail?: string; name?: string }): boolean {
+/**
+ * Already failing before this change: the Engineer marked it, the project's
+ * default-branch baseline lists it as failing, or its output says so.
+ */
+function preExisting(
+  c: { pre_existing?: boolean; output_tail?: string; name?: string; command?: string },
+  baseline: Baseline | null = null,
+): boolean {
   if (c.pre_existing) return true;
+  const key = (x: { name?: string; command?: string }) => [x.name, x.command].filter(Boolean).map((v) => v!.toLowerCase().trim());
+  if (baseline?.checks.some((b) => !b.passed && key(b).some((k) => key(c).includes(k)))) return true;
   const text = `${c.name ?? ''}\n${c.output_tail ?? ''}`;
   return /pre-?existing|identical (first )?(failures?|errors?)[^\n]*\bmain\b|same \d* ?failing|(also )?fails? (the same way )?on (main|master|the default branch)|no new errors|on both branch and main/i.test(text);
+}
+
+type Baseline = { commit_sha: string | null; checks: BaselineCheck[]; recorded_at: string };
+
+async function loadBaseline(projectId: string): Promise<Baseline | null> {
+  const { data } = await db().rpc('agentsync_check_baseline_get', { p_project_id: projectId });
+  return (data as Baseline | null) ?? null;
+}
+
+/**
+ * How the project's checks did on its default branch, last time an Engineer
+ * looked — so this session neither re-runs them there nor repairs old failures.
+ */
+async function baselineBlock(job: Job, client: Octokit, r: Repo): Promise<string> {
+  const b = await loadBaseline(job.task.project_id);
+  if (!b?.checks.length) return '';
+  const head = await branchSha(client, r, r.defaultBranch);
+  const current = !!head && head === b.commit_sha;
+  const lines = b.checks.map((c) => `- ${c.name}${c.command ? ` (\`${c.command}\`)` : ''}: ${c.passed ? 'passes' : 'FAILS'}${c.summary ? ` — ${c.summary}` : ''}`);
+  return [
+    `<known_on_default_branch sha="${b.commit_sha ?? '?'}" current="${current ? 'yes' : 'no'}">`,
+    ...lines,
+    '</known_on_default_branch>',
+    current
+      ? `This is how the checks do on ${r.defaultBranch} right now. Do not re-run them there. A failure matching a check that FAILS above is pre-existing: mark it pre_existing and leave it.`
+      : `This is from an older commit of ${r.defaultBranch}. Treat matching failures as pre-existing; re-run a check on ${r.defaultBranch} only if a failure looks related to changes since then.`,
+  ].join('\n');
+}
+
+/**
+ * Remember what this session learned about the default branch: its own
+ * baseline if it ran one, else the failures it showed were already there.
+ */
+async function saveBaseline(job: Job, client: Octokit, r: Repo, report: EngineerReport, inherited: EngineerReport['checks']) {
+  let sha = report.baseline?.default_branch_sha || null;
+  let checks: BaselineCheck[] = (report.baseline?.checks ?? []).filter((c) => c && c.name);
+  if (!checks.length && inherited.length) {
+    const previous = await loadBaseline(job.task.project_id);
+    const merged = new Map((previous?.checks ?? []).map((c) => [c.name, c]));
+    for (const c of inherited) {
+      merged.set(c.name, { name: c.name, command: c.command, passed: false, summary: (c.output_tail ?? '').split('\n').filter(Boolean).slice(-1)[0]?.slice(0, 200) });
+    }
+    checks = [...merged.values()];
+    sha = null;
+  }
+  if (!checks.length) return;
+  sha ??= await branchSha(client, r, r.defaultBranch);
+  await db().rpc('agentsync_check_baseline_set', {
+    p_project_id: job.task.project_id,
+    p_sha: sha,
+    p_checks: checks.slice(0, 30).map((c) => ({ name: c.name, command: c.command ?? null, passed: !!c.passed, summary: (c.summary ?? '').slice(0, 300) })),
+  });
+}
+
+/**
+ * The files the plan changes, as they are now, for the Engineer's first
+ * message — so it edits instead of spending turns finding and opening them.
+ */
+async function planFilesBlock(client: Octokit, r: Repo, planned: string[], ref: string): Promise<string> {
+  if (!planned.length) return '';
+  const parts: string[] = [];
+  let total = 0;
+  for (const path of planned) {
+    const text = await readFile(client, r, path, ref);
+    if (text === null) {
+      parts.push(`<file path="${path}" status="new">(does not exist yet — create it)</file>`);
+      continue;
+    }
+    const room = Math.min(20_000, 120_000 - total);
+    if (room <= 2_000) {
+      parts.push(`<file path="${path}" status="not included">(open it in the sandbox)</file>`);
+      continue;
+    }
+    const cut = text.length > room;
+    const body = text.slice(0, room);
+    total += body.length;
+    parts.push(`<file path="${path}"${cut ? ` truncated="true" total_chars="${text.length}"` : ''}>\n${body}\n</file>`);
+  }
+  return [
+    `<plan_files ref="${ref}">`,
+    'The current contents of the files the plan changes. Edit these directly; open other files only when the plan needs them.',
+    ...parts,
+    '</plan_files>',
+  ].join('\n');
 }
 
 const FAILED = new Set(['failure', 'timed_out', 'cancelled', 'action_required', 'startup_failure', 'stale']);
