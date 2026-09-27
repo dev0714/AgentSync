@@ -324,11 +324,23 @@ export async function openaiParts(ctx: AiContext, attachments: Attachment[]): Pr
  * container (OpenAI) as its original file, and converted text is included in
  * the prompt for formats the agent cannot open directly.
  */
+/**
+ * Where a Claude sandbox puts mounted files. File resources live under the
+ * session's uploads directory (the API's default is <this>/<file_id>); a
+ * mount_path elsewhere, like /workspace/…, ends up nested under it instead.
+ */
+export const SANDBOX_UPLOADS = '/mnt/session/uploads';
+export const SANDBOX_ATTACHMENTS = `${SANDBOX_UPLOADS}/attachments`;
+
+/** A line telling the agent how to find a mounted file if it is not where we said. */
+export const findHint = (name: string) =>
+  `If a file is not at that path, find it with: find / -name '${name}' -not -path '/proc/*' 2>/dev/null | head -5`;
+
 export async function claudeSandboxMounts(ctx: AiContext, attachments: Attachment[]) {
   const mounts: { type: 'file'; file_id: string; mount_path: string }[] = [];
   const names = mountNames(attachments);
   for (const [i, a] of attachments.entries()) {
-    mounts.push({ type: 'file', file_id: await ensureAnthropicFile(ctx, a), mount_path: `/workspace/attachments/${names[i]}` });
+    mounts.push({ type: 'file', file_id: await ensureAnthropicFile(ctx, a), mount_path: `${SANDBOX_ATTACHMENTS}/${names[i]}` });
   }
   return mounts;
 }
@@ -364,13 +376,14 @@ export function sandboxAttachmentPrompt(attachments: Attachment[], where: 'claud
   const names = mountNames(attachments);
   const seen = new Map<string, number>();
   const lines = attachments.map((a, i) => {
-    if (where === 'claude') return `- /workspace/attachments/${names[i]} (${a.media_type})`;
+    if (where === 'claude') return `- ${SANDBOX_ATTACHMENTS}/${names[i]} (${a.media_type})`;
     const n = (seen.get(a.filename) ?? 0) + 1;
     seen.set(a.filename, n);
     return `- ${a.filename}${n > 1 ? ` (${n})` : ''} (${a.media_type}) — in the container's uploaded files (look under /mnt/data if unsure)`;
   });
   const texts = attachments.filter((a) => !nativeToModel(a) && a.extracted_text).map(textBlock);
-  return [`<attachments>\n${ATTACHMENT_NOTE}\n${lines.join('\n')}\n</attachments>`, ...texts].join('\n\n');
+  const hint = where === 'claude' ? `\n${findHint(names[0])}` : '';
+  return [`<attachments>\n${ATTACHMENT_NOTE}\n${lines.join('\n')}${hint}\n</attachments>`, ...texts].join('\n\n');
 }
 
 /** Deletes the provider copies once the task is over. The stored original stays. */

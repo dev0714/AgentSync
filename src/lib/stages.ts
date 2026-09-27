@@ -36,6 +36,10 @@ import {
   openaiSandboxFileIds,
   prepareAttachments,
   readyAttachments,
+  findHint,
+  mountNames,
+  SANDBOX_ATTACHMENTS,
+  SANDBOX_UPLOADS,
   sandboxAttachmentPrompt,
 } from './attachments';
 import { recall, remember, renderMemoryBlock } from './memory';
@@ -662,7 +666,7 @@ const TOKEN_ROTATE_MINUTES = 40;
  */
 /* ---- the code map in the Engineer's sandbox ---------------------------- */
 
-const CODE_MAP_MOUNT = '/workspace/code-map/graph.json';
+const CODE_MAP_MOUNT = `${SANDBOX_UPLOADS}/code-map/graph.json`;
 
 export function impactOf(job: Job): Impact | null {
   const i = job.task.stage_state.map_impact as Impact | null | undefined;
@@ -692,6 +696,7 @@ function codeMapPrompt(job: Job, map: { id: string } | null, onOpenAI: boolean):
     impact ? `What depends on the files in the plan (from the project's code map):\n${impact.text}\n` : '',
     map ? [
       `A Graphify map of the repository's default branch is at ${where}. It is a reference, not part of the repository: never commit it, and trust the code where they differ.`,
+      onOpenAI ? '' : findHint('graph.json'),
       'To look something up, install Graphify once (pip install -q graphifyy==0.9.69), then:',
       `  graphify query "<question>" --graph ${g} --budget 1500   # the code a question is about`,
       `  graphify explain "<symbol or file>" --graph ${g}           # one item and its connections`,
@@ -786,7 +791,10 @@ async function implementInSandbox(job: Job): Promise<Outcome> {
     });
     await logEvent(job.task.id, 'agent.sandbox_started',
       `Engineer started in ${onOpenAI ? 'an OpenAI' : 'a Claude'} sandbox (${started.model}, ${engineer.tier ?? 'medium'} tier)`,
-      { session_id: started.sessionId });
+      {
+        session_id: started.sessionId,
+        mounts: onOpenAI ? [] : [...mountNames(docs).map((n) => `${SANDBOX_ATTACHMENTS}/${n}`), ...(map ? [CODE_MAP_MOUNT] : [])],
+      });
     return { wait: 30 };
   }
 

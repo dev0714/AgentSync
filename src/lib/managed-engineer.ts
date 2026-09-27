@@ -157,7 +157,7 @@ export async function startEngineerSession(params: {
   token: string;
   prompt: string;
   title: string;
-  /** Request attachments, mounted read-only under /workspace/attachments. */
+  /** Request attachments and the code map, mounted read-only under /mnt/session/uploads. */
   files?: { type: 'file'; file_id: string; mount_path: string }[];
 }): Promise<{ sessionId: string; resourceId: string | null; model: string }> {
   const client = await clientFor(params.ctx);
