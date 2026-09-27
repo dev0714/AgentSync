@@ -78,6 +78,25 @@ function setupGroups(agent: AgentDefinition) {
   ];
 }
 
+type FlowStep = { id: string; agent?: AgentDefinition; label?: string; note?: string };
+
+/**
+ * The agents in stage order, with the two points a person decides placed
+ * where the pipeline holds: after planning, and after review.
+ */
+function flow(agents: AgentDefinition[]): FlowStep[] {
+  const ordered = [...agents].sort((a, b) => a.stage_order - b.stage_order);
+  const steps: FlowStep[] = [];
+  const planner = ordered.findIndex((a) => /plan/i.test(a.key));
+  const reviewer = ordered.findIndex((a) => /review/i.test(a.key));
+  ordered.forEach((a, i) => {
+    steps.push({ id: a.id, agent: a });
+    if (i === planner) steps.push({ id: 'gate-plan', label: 'Plan approval', note: 'Nothing is built before this' });
+    if (i === reviewer) steps.push({ id: 'gate-merge', label: 'Merge approval', note: 'Nothing merges before this' });
+  });
+  return steps;
+}
+
 export default function Agents({
   agents,
   agentKey,
@@ -112,48 +131,60 @@ export default function Agents({
   const sg = groups[Math.min(setupGroup, groups.length - 1)];
 
   return (
-    <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[268px_1fr]">
-      {/* ---- agent list ---- */}
-      <div className="flex flex-col gap-2">
-        <div className="label">Agent definitions</div>
-        {agents.map((a) => (
-          <button
-            key={a.key}
-            onClick={() => onAgent(a.key)}
-            className="cursor-pointer rounded-lg border p-3 text-left"
-            style={{
-              background: agent.key === a.key ? 'var(--color-raised)' : 'var(--color-card)',
-              borderColor: agent.key === a.key ? 'var(--color-line-strong)' : 'var(--color-line)',
-            }}
-          >
-            <div className="flex items-center gap-2">
-              <span
-                className="size-1.5 rounded-full"
-                style={{ background: a.enabled ? 'var(--color-ok)' : 'var(--color-muted-4)' }}
-              />
-              <span className="flex-1 text-[14.5px] font-semibold">
-                {a.display_name}
-              </span>
-              <span className="mono text-[11.5px] text-muted-2">
-                stage {a.stage_order}
-              </span>
-            </div>
-            <div className="mono mt-1 text-[11.5px] text-muted-3">{a.key}</div>
-            <div className="mt-1 line-clamp-2 text-[13px] text-muted">
-              {a.purpose}
-            </div>
-          </button>
-        ))}
-      </div>
+    <div className="flex flex-col gap-4">
+      {/* ---- the pipeline: agents in order, with the points a person decides ---- */}
+      <section aria-labelledby="flow-h" className="flex flex-col gap-2.5">
+        <div className="flex flex-wrap items-baseline gap-x-2.5">
+          <h2 id="flow-h" className="m-0 text-[15px] font-semibold">How a task moves</h2>
+          <span className="text-[13px] text-muted-3">Pick an agent to see and change how it works.</span>
+        </div>
+        <ol className="m-0 flex list-none flex-wrap items-stretch gap-y-2 p-0">
+          {flow(agents).map((step, i, all) => (
+            <li key={step.id} className="flex min-w-[150px] flex-1 items-center">
+              {step.agent ? (
+                <button
+                  type="button"
+                  onClick={() => onAgent(step.agent!.key)}
+                  aria-pressed={agent.key === step.agent.key}
+                  className={`flex min-h-[86px] flex-1 cursor-pointer flex-col items-start gap-1 rounded-[10px] border p-3 text-left ${
+                    agent.key === step.agent.key ? 'border-ink bg-raised shadow-[0_0_0_1px_var(--color-ink)]' : 'border-line-soft bg-card hover:border-line-strong'
+                  }`}
+                >
+                  <span className="flex items-center gap-1.5 text-[12px] font-semibold" style={{ color: step.agent.enabled ? 'var(--color-agent-ink)' : 'var(--color-muted-3)' }}>
+                    <span className="size-1.5 rounded-full" style={{ background: step.agent.enabled ? 'var(--color-accent)' : 'var(--color-muted-4)' }} />
+                    {step.agent.enabled ? 'Agent' : 'Agent · off'}
+                  </span>
+                  <span className="text-[14.5px] font-semibold">{step.agent.display_name}</span>
+                  <span className="line-clamp-2 text-[12.5px] leading-snug text-muted-3">{step.agent.purpose}</span>
+                </button>
+              ) : (
+                <div className="flex min-h-[86px] flex-1 flex-col items-start gap-1 rounded-[10px] border border-[var(--color-gate-line)] bg-gate-tint/50 p-3">
+                  <span className="flex items-center gap-1.5 text-[12px] font-semibold text-gate-ink">
+                    <span className="size-1.5 rounded-full bg-gate" />
+                    You decide
+                  </span>
+                  <span className="text-[14.5px] font-semibold">{step.label}</span>
+                  <span className="text-[12.5px] leading-snug text-muted-3">{step.note}</span>
+                </div>
+              )}
+              {i < all.length - 1 ? (
+                <svg width="22" height="16" viewBox="0 0 22 16" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0 text-line-strong">
+                  <path d="M3 8h15M13 3l5 5-5 5" />
+                </svg>
+              ) : null}
+            </li>
+          ))}
+        </ol>
+      </section>
 
       {/* ---- agent detail ---- */}
       <div className="card min-w-0 overflow-hidden">
         <div className="flex flex-col items-start gap-4 p-4 lg:flex-row">
           <div className="min-w-0 flex-1">
             <div className="mb-1.5 flex flex-wrap items-center gap-2.5">
-              <span className="mono text-[12.5px] text-accent">{agent.key}</span>
+              <span className="mono text-[12.5px] text-muted-3">{agent.key}</span>
               <Pill c={agent.enabled ? ['var(--color-ok-tint)', 'var(--color-ok-ink)'] : ['var(--color-line-faint)', 'var(--color-muted-2)']}>
-                {agent.enabled ? 'ENABLED' : 'DISABLED'}
+                {agent.enabled ? 'Enabled' : 'Disabled'}
               </Pill>
               <span className="mono text-[12px] text-muted-2">
                 {agent.platform_default ? 'platform default' : 'tenant override'}

@@ -3,20 +3,16 @@
 import type {
   Project as ProjectRecord,
   SourceRow,
-  Usage as UsageTotals,
 } from '@/lib/portal-data';
 import {
-  ACCENT,
   STATE_COLOUR,
-  compact,
-  money,
   rowsFrom,
   swatch,
   type Row,
 } from '@/lib/portal-ui';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { Ago, Bar, ColLabel, FieldRows, Pill, TableCard, Tabs } from '../ui';
+import { Ago, FieldRows, Pill, Tabs } from '../ui';
 import RequestForm from './RequestForm';
 import { TierPicker, useTierSettings, type EngineerMode, type Tier } from '../tiers';
 import { IssueKeyForm } from './SetupForms';
@@ -379,16 +375,13 @@ export { Project_ as Project };
 
 /* ---- source systems -------------------------------------------------- */
 
-const SRC_GRID =
-  'grid min-w-[1000px] grid-cols-[minmax(200px,1fr)_160px_150px_100px_90px_90px_100px] items-center gap-3';
 
 export function Sources({ sources, tenantSlug }: { sources: SourceRow[]; tenantSlug: string | null }) {
   const [openSource, setOpenSource] = useState<string | null>(sources.length === 1 ? sources[0].id : null);
-  const selected = sources.find((s) => s.id === openSource) ?? null;
   const issue = (
     <SetupCard
-      title={sources.length === 0 ? 'Issue your first key' : 'Issue another key'}
-      detail="A source system is anything allowed to submit tasks — a service desk, an intake form, a cron job. The key is shown once; only its hash is stored."
+      title={sources.length === 0 ? 'Connect your first source' : 'Connect another source'}
+      detail="A source system is anything allowed to send work — a service desk, an intake form, a scheduled job. Its key is shown once; only a hash is kept."
     >
       <IssueKeyForm tenantSlug={tenantSlug} />
     </SetupCard>
@@ -396,135 +389,60 @@ export function Sources({ sources, tenantSlug }: { sources: SourceRow[]; tenantS
   if (sources.length === 0) return issue;
 
   return (
-    <div className="flex flex-col gap-3">
-      {issue}
-      <div className="text-[14px] text-muted" style={{ lineHeight: 1.6 }}>
-        Systems permitted to submit tasks. Keys are stored hashed; signing
-        secrets live in the secret manager and are referenced by identifier
-        only.
-      </div>
-      <TableCard>
-        <div
-          className={`${SRC_GRID} border-b border-line bg-raised px-3.5 py-[9px]`}
-        >
-          <ColLabel>System</ColLabel>
-          <ColLabel>Key prefix</ColLabel>
-          <ColLabel>IP allowlist</ColLabel>
-          <ColLabel>Rate limit</ColLabel>
-          <ColLabel>Tasks</ColLabel>
-          <ColLabel right>State</ColLabel>
-          <ColLabel right>Clients</ColLabel>
-        </div>
-        {sources.map((s) => (
-          <div
-            key={s.id}
-            className={`${SRC_GRID} border-b border-line-faint px-3.5 py-[11px]`}
-          >
-            <div className="min-w-0">
-              <div className="truncate text-[14.5px] font-medium">{s.name}</div>
-              <div className="mono text-[12px] text-muted-2">
-                last used <Ago iso={s.last_used_at} />
+    <div className="flex flex-col gap-4">
+      <p className="m-0 text-[14px] text-muted-3">
+        Systems that send work to AgentSync, and which repository each of their clients’ requests goes to.
+      </p>
+      {sources.map((s) => {
+        const open = openSource === s.id;
+        const facts: [string, React.ReactNode][] = [
+          ['Key', <span key="k" className="mono">{s.api_key_prefix}…</span>],
+          ['Allowed from', s.ip_allowlist.length ? s.ip_allowlist.join(', ') : 'Any address'],
+          ['Rate limit', `${s.rate_limit_per_minute} a minute`],
+          ['Tasks sent', String(s.task_count)],
+        ];
+        return (
+          <section key={s.id} aria-label={s.name} className="card overflow-hidden">
+            <div className="flex flex-wrap items-center gap-3.5 border-b border-line-soft px-5 py-4">
+              <span aria-hidden="true" className="flex size-9 items-center justify-center rounded-lg border border-line-soft bg-raised text-[13px] font-bold">
+                {s.name.replace(/[^a-z0-9]/gi, '').slice(0, 2).toUpperCase()}
+              </span>
+              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <h2 className="m-0 text-[16px] font-semibold">{s.name}</h2>
+                  <Pill c={swatch(STATE_COLOUR, s.state)}>{s.state}</Pill>
+                </div>
+                <span className="text-[13px] text-muted-3">
+                  Last request <Ago iso={s.last_used_at} /> ago
+                </span>
               </div>
-            </div>
-            <span className="mono text-[12.5px] text-ink-2">
-              {s.api_key_prefix}…
-            </span>
-            <span className="mono text-[12px] text-muted">
-              {s.ip_allowlist.length ? s.ip_allowlist.join(', ') : 'any'}
-            </span>
-            <span className="mono text-[12px] text-muted">
-              {s.rate_limit_per_minute}/min
-            </span>
-            <span className="mono text-[12px] text-muted">{s.task_count}</span>
-            <div className="text-right">
-              <Pill c={swatch(STATE_COLOUR, s.state)}>{s.state}</Pill>
-            </div>
-            <div className="text-right">
               <button
-                className="text-[13.5px] font-medium text-ink underline decoration-line underline-offset-4 hover:decoration-ink"
-                onClick={() => setOpenSource(openSource === s.id ? null : s.id)}
-                aria-expanded={openSource === s.id}
+                className={open ? 'btn' : 'btn-primary'}
+                onClick={() => setOpenSource(open ? null : s.id)}
+                aria-expanded={open}
               >
-                {openSource === s.id ? 'Hide' : 'Map clients'}
+                {open ? 'Hide clients' : 'Clients and repositories'}
               </button>
             </div>
-          </div>
-        ))}
-      </TableCard>
-      {selected ? (
-        <SourceClients key={selected.id} sourceId={selected.id} sourceName={selected.name} tenantSlug={tenantSlug} />
-      ) : null}
+            <dl className="m-0 grid grid-cols-2 lg:grid-cols-4">
+              {facts.map(([k, v], i) => (
+                <div key={k} className={`flex flex-col gap-1 px-5 py-3.5 ${i > 0 ? 'lg:border-l' : ''} ${i % 2 ? 'border-l lg:border-l' : ''} border-line-soft`}>
+                  <dt className="text-[12px] text-muted-3">{k}</dt>
+                  <dd className="m-0 truncate text-[14px] font-medium">{v}</dd>
+                </div>
+              ))}
+            </dl>
+            {open ? (
+              <div className="border-t border-line-soft p-4">
+                <SourceClients key={s.id} sourceId={s.id} sourceName={s.name} tenantSlug={tenantSlug} />
+              </div>
+            ) : null}
+          </section>
+        );
+      })}
+      {issue}
     </div>
   );
 }
 
 /* ---- usage ----------------------------------------------------------- */
-
-export function Usage_({
-  usage,
-  projects,
-}: {
-  usage: UsageTotals;
-  projects: ProjectRecord[];
-}) {
-  const spending = projects.filter((p) => Number(p.spend) > 0);
-  const peak = Math.max(...spending.map((p) => Number(p.spend)), 0);
-
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {[
-          { label: 'Spend this month', value: money(usage.month_cost), sub: usage.budget > 0 ? `of ${money(usage.budget)} budgeted` : 'no budget set' },
-          { label: 'Input tokens', value: compact(usage.month_input_tokens), sub: 'this month' },
-          { label: 'Output tokens', value: compact(usage.month_output_tokens), sub: 'this month' },
-          { label: 'Failover calls', value: String(usage.failover_calls), sub: 'served by the fallback model' },
-        ].map((uc) => (
-          <div key={uc.label} className="card flex flex-col gap-[7px] px-[15px] py-3.5">
-            <div className="label">{uc.label}</div>
-            <div className="text-2xl leading-none font-semibold tracking-[-0.02em]">
-              {uc.value}
-            </div>
-            <div className="text-[12.5px] text-muted">{uc.sub}</div>
-          </div>
-        ))}
-      </div>
-
-      <div className="card p-4">
-        <div className="mb-3.5 text-[14.5px] font-semibold">
-          Spend by project · current month
-        </div>
-        {spending.length === 0 ? (
-          <div className="text-[14px] text-muted" style={{ lineHeight: 1.6 }}>
-            No model calls have been billed to this tenant yet. Every call a
-            worker makes is recorded per task and per agent, so this fills in as
-            soon as work runs.
-          </div>
-        ) : (
-          <div className="flex flex-col gap-3">
-            {spending.map((p) => (
-              <div
-                key={p.id}
-                className="grid grid-cols-[minmax(140px,200px)_1fr_80px_60px] items-center gap-3"
-              >
-                <div className="truncate text-[14px]">{p.name}</div>
-                <Bar
-                  pct={`${peak > 0 ? Math.round((Number(p.spend) / peak) * 100) : 0}%`}
-                  color={ACCENT}
-                  height={6}
-                />
-                <div className="mono text-right text-[12.5px] text-ink-2">
-                  {money(p.spend)}
-                </div>
-                <div className="mono text-[12px] text-muted-2">
-                  {p.monthly_ai_budget ? money(p.monthly_ai_budget) : '—'}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-export { Usage_ as Usage };

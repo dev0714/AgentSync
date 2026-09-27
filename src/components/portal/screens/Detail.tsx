@@ -167,15 +167,15 @@ export default function Detail({
       <div className="flex flex-col items-start gap-4 xl:flex-row">
         <div className="min-w-0 flex-1">
           <div className="mb-1.5 flex flex-wrap items-center gap-2.5">
-            <span className="mono text-xs font-medium text-accent">
+            <span className="mono text-[13px] text-muted-3">
               {task.external_reference ?? task.correlation_id.slice(0, 8)}
             </span>
             <Pill c={swatch(TASK_STATUS_COLOUR, task.status)}>
               {statusLabel(task.status)}
             </Pill>
             <TierBadge tier={task.tier} />
-            <span className="mono text-[12px] text-muted-2">
-              corr: {task.correlation_id}
+            <span className="mono text-[12px] text-muted-3" title="Correlation id">
+              {task.correlation_id}
             </span>
             {detail.project ? (
               <span className="mono text-[12px] text-muted-3">
@@ -191,6 +191,8 @@ export default function Detail({
           </div>
         </div>
       </div>
+
+      <StepTracker status={task.status} progress={task.progress_percent} />
 
       {banner ? (
         <GateBanner
@@ -221,7 +223,7 @@ export default function Detail({
                   right={
                     plan.complexity ? (
                       <Pill c={['var(--color-ok-tint)', 'var(--color-ok-ink)']}>
-                        COMPLEXITY: {plan.complexity.toUpperCase()}
+                        {statusLabel(plan.complexity)} complexity
                       </Pill>
                     ) : undefined
                   }
@@ -718,33 +720,23 @@ function GateBanner({
   }
 
   return (
-    <div
+    <section
       role="status"
-      className="flex flex-col gap-4 rounded-[10px] border border-[var(--color-gate-line)] bg-gate-tint px-5 py-4"
+      aria-label="Your decision"
+      className="flex flex-col gap-3.5 rounded-[10px] border border-[var(--color-gate-line)] bg-gate-tint/50 px-5 py-4"
     >
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <span className="pulse-ring relative flex size-9 shrink-0 items-center justify-center rounded-full bg-gate text-on-gate">
-          <span className="size-2.5 rounded-full bg-on-gate" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="text-[15.5px] font-semibold text-gate-ink">{title}</div>
-          <div className="text-[14px] text-ink-3" style={{ lineHeight: 1.55 }}>
-            {body}
-          </div>
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-2 text-[16px] font-semibold text-ink">
+          <span className="size-2 rounded-full bg-gate" />
+          {gate === 'plan' ? 'Your decision: approve the plan' : gate === 'merge' ? 'Your decision: approve the merge' : title}
         </div>
-        {gate ? (
-          <div className="flex shrink-0 flex-wrap gap-2">
-            <button className="btn-gate" disabled={!!busy} onClick={() => decide('approved')}>
-              {busy === 'approved' ? 'Approving…' : gate === 'plan' ? 'Approve plan' : 'Approve & merge'}
-            </button>
-            <button className="btn" disabled={!!busy} onClick={() => (asking ? decide('changes_requested') : setAsking(true))}>
-              {busy === 'changes_requested' ? 'Sending…' : asking ? 'Send changes' : 'Request changes'}
-            </button>
-            <button className="btn btn-danger" disabled={!!busy} onClick={() => decide('rejected')}>
-              Reject
-            </button>
-          </div>
-        ) : null}
+        <p className="m-0 text-[14px] leading-relaxed text-ink-3">
+          {gate === 'plan'
+            ? 'No code is written until the plan is approved. Approving starts the Engineer. Asking for changes sends your note back to the Planner, who writes a new version.'
+            : gate === 'merge'
+              ? 'The checks and the review are below. Approving merges the pull request and releases it. Asking for changes sends your note back to the Engineer.'
+              : body}
+        </p>
       </div>
       {asking ? (
         <label className="flex flex-col gap-1.5">
@@ -754,10 +746,99 @@ function GateBanner({
             value={comment}
             onChange={(e) => setComment(e.target.value)}
             placeholder="The agent reads this before it tries again."
+            autoFocus
           />
         </label>
       ) : null}
+      {gate ? (
+        <div className="flex flex-wrap items-center gap-2">
+          {asking ? (
+            <>
+              <button className="btn-primary" disabled={!!busy} onClick={() => decide('changes_requested')}>
+                {busy === 'changes_requested' ? 'Sending…' : gate === 'plan' ? 'Send to the Planner' : 'Send to the Engineer'}
+              </button>
+              <button className="btn" disabled={!!busy} onClick={() => { setAsking(false); setProblem(null); }}>
+                Back
+              </button>
+            </>
+          ) : (
+            <>
+              <button className="btn-primary" disabled={!!busy} onClick={() => decide('approved')}>
+                {busy === 'approved' ? 'Approving…' : gate === 'plan' ? 'Approve plan' : 'Approve and merge'}
+              </button>
+              <button className="btn" disabled={!!busy} onClick={() => setAsking(true)}>
+                Request changes
+              </button>
+              <span className="flex-1" />
+              <button
+                className="min-h-[38px] cursor-pointer rounded-lg px-3 text-[14px] font-medium text-danger-ink hover:bg-danger-tint disabled:opacity-50"
+                disabled={!!busy}
+                onClick={() => decide('rejected')}
+              >
+                Reject task
+              </button>
+            </>
+          )}
+        </div>
+      ) : null}
       {problem ? <div className="text-[13.5px] text-danger-ink">{problem}</div> : null}
-    </div>
+    </section>
+  );
+}
+
+const STEPS = ['Received', 'Analyse', 'Plan', 'Plan approval', 'Build', 'Test', 'Pull request', 'Merge approval', 'Released'];
+const GATE_STEPS = new Set([3, 7]);
+
+/** Where each status sits on the way from request to release. */
+const STEP_OF: Record<string, number> = {
+  received: 0, validating: 0, queued: 0,
+  analysing: 1,
+  planning: 2, needs_information: 2,
+  awaiting_plan_approval: 3,
+  implementing: 4,
+  testing: 5,
+  creating_pull_request: 6, deploying_preview: 6,
+  awaiting_merge_approval: 7,
+  deploying_production: 8, awaiting_production_approval: 8,
+};
+
+/**
+ * The task's place in the pipeline: done steps filled, the current one in
+ * blue (an agent working) or orange (a person decides), the rest waiting.
+ */
+function StepTracker({ status, progress }: { status: string; progress: number | null }) {
+  const done = status === 'completed';
+  const stopped = status === 'failed' || status === 'cancelled' || status === 'rolled_back';
+  const current = done
+    ? STEPS.length
+    : STEP_OF[status] ?? Math.min(STEPS.length - 1, Math.floor(((Number(progress) || 0) / 100) * STEPS.length));
+  return (
+    <ol aria-label="Progress" className="card m-0 grid list-none grid-cols-3 gap-x-2 gap-y-3 p-4 sm:grid-cols-5 lg:grid-cols-9">
+      {STEPS.map((label, i) => {
+        const isDone = i < current;
+        const isNow = i === current && !done;
+        const gate = GATE_STEPS.has(i) || status === 'needs_information';
+        const colour = isNow ? (stopped ? 'var(--color-danger)' : gate && isNow ? 'var(--color-gate)' : 'var(--color-accent)') : isDone ? 'var(--color-ink-3)' : 'var(--color-line-soft)';
+        return (
+          <li key={label} aria-current={isNow ? 'step' : undefined} className="flex flex-col gap-2">
+            <span aria-hidden="true" className="h-1 rounded-[2px]" style={{ background: done ? 'var(--color-ok)' : colour }} />
+            <span className={`flex items-center gap-1.5 text-[12.5px] ${isNow ? 'font-semibold text-ink' : isDone || done ? 'font-medium text-ink-3' : 'text-muted-3'}`}>
+              <span
+                aria-hidden="true"
+                className="flex size-4 shrink-0 items-center justify-center rounded-full border-[1.5px] text-[9.5px] font-bold"
+                style={{
+                  background: done ? 'var(--color-ok)' : isDone ? 'var(--color-ink-3)' : isNow ? colour : 'transparent',
+                  borderColor: done ? 'var(--color-ok)' : isDone ? 'var(--color-ink-3)' : isNow ? colour : 'var(--color-line-strong)',
+                  color: 'var(--color-card)',
+                }}
+              >
+                {isDone || done ? '✓' : isNow && stopped ? '!' : ''}
+              </span>
+              {isNow && stopped ? `${label} — stopped` : label}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
   );
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import type { Member, Tenant, TenantSummary } from '@/lib/portal-data';
-import { STATE_COLOUR, rowsFrom, swatch } from '@/lib/portal-ui';
+import { STATE_COLOUR, rowsFrom, statusLabel, swatch } from '@/lib/portal-ui';
 import { Ago, ColLabel, Empty, FieldRows, Pill, Tabs } from '../ui';
 
 export default function Tenants({
@@ -105,7 +105,7 @@ export default function Tenants({
                     : ['var(--color-caution-tint)', 'var(--color-caution-ink)']
                 }
               >
-                {tenant.status.toUpperCase()}
+                {statusLabel(tenant.status)}
               </Pill>
               <span className="mono text-[12px] text-muted-2">
                 {tenant.plan ?? 'no plan'} · {tenant.data_region ?? 'no region'}

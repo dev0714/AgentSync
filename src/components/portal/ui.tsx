@@ -388,3 +388,36 @@ export function TableCard({
     </div>
   );
 }
+
+/** A row of mutually exclusive filters, as one segmented control. */
+export function Segmented<T extends string>({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: { k: T; label: string; count?: number }[];
+  value: T;
+  onChange: (k: T) => void;
+}) {
+  return (
+    <div role="tablist" aria-label={label} className="flex flex-wrap gap-0.5 rounded-lg border border-line-soft bg-raised p-[3px]">
+      {options.map((o) => (
+        <button
+          key={o.k}
+          type="button"
+          role="tab"
+          aria-selected={value === o.k}
+          onClick={() => onChange(o.k)}
+          className={`flex h-7 cursor-pointer items-center gap-1.5 rounded-[5px] px-2.5 text-[12.5px] font-medium ${
+            value === o.k ? 'dark-ring bg-card text-ink shadow-[0_1px_2px_rgba(17,19,24,0.12)]' : 'text-ink-3 hover:text-ink'
+          }`}
+        >
+          {o.label}
+          {o.count !== undefined ? <span className="text-muted-3 tabular-nums">{o.count}</span> : null}
+        </button>
+      ))}
+    </div>
+  );
+}

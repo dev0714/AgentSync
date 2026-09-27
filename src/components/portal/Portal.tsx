@@ -10,7 +10,8 @@ import ThemeToggle from "./ThemeToggle";
 import { FieldProvider } from "./ui";
 import Agents, { type AgentTab } from "./screens/Agents";
 import Connections, { type ConnTab } from "./screens/Connections";
-import { Project, Sources, Usage } from "./screens/Config";
+import { Project, Sources } from "./screens/Config";
+import Usage from "./screens/Usage";
 import Detail, { type DetailTab } from "./screens/Detail";
 import { Approvals, Audit, Deployments } from "./screens/Ops";
 import Tasks from "./screens/Tasks";
@@ -279,7 +280,7 @@ export default function Portal({
             ) : null}
             {screen === "sources" ? <Sources sources={data.sources} tenantSlug={data.tenant?.slug ?? null} /> : null}
             {screen === "usage" ? (
-              <Usage usage={data.usage} projects={data.projects} />
+              <Usage usage={data.usage} tenantSlug={data.tenant?.slug ?? null} />
             ) : null}
             {screen === "connections" ? (
               <Connections
