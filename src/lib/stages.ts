@@ -368,15 +368,35 @@ async function plan(job: Job): Promise<Outcome> {
 
   const blocked = out.affected_files.filter((p) => isProtected(job, p) || !isAllowed(job, p));
   const affected = out.affected_files.filter((p) => !blocked.includes(p));
+  const assumptions = [...out.assumptions, ...blocked.map((b) => `Excluded protected path ${b}`)];
+
+  // Nothing to change — often the request is already done, or too unclear to
+  // act on. That is a question for a person, not a failure: keep the Planner's
+  // reasoning and hold at the plan gate, where they can send it back with an
+  // answer or reject it. Approving is refused (nothing to build).
   if (affected.length === 0) {
-    throw new StageFailed('EMPTY_PLAN', 'the plan does not touch any file the project allows');
+    const questions = out.open_questions.length
+      ? out.open_questions
+      : ['The Planner found nothing to change. Is this already done, or what exactly should change?'];
+    const { data: version, error } = await db().rpc('agentsync_record_plan', {
+      p_task_id: job.task.id,
+      p_plan: { ...out, affected_files: [], assumptions, open_questions: questions },
+    });
+    if (error) throw error;
+    await update(job, { stage_state: { plan_empty: true, map_impact: null } });
+    await logEvent(job.task.id, 'agent.planned', `Plan v${version} found nothing to change: ${out.summary}`.slice(0, 2000));
+    return {
+      to: 'awaiting_plan_approval',
+      message: `The Planner found nothing to change. ${out.summary} Questions: ${questions.join(' ')}`.slice(0, 2000),
+    };
   }
 
   const { data: version, error } = await db().rpc('agentsync_record_plan', {
     p_task_id: job.task.id,
-    p_plan: { ...out, affected_files: affected, assumptions: [...out.assumptions, ...blocked.map((b) => `Excluded protected path ${b}`)] },
+    p_plan: { ...out, affected_files: affected, assumptions },
   });
   if (error) throw error;
+  await update(job, { stage_state: { plan_empty: false } });
 
   await logEvent(job.task.id, 'agent.planned', `Plan v${version}: ${affected.length} file(s), ${out.complexity} complexity`);
 

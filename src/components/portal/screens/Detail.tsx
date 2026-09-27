@@ -192,7 +192,7 @@ export default function Detail({
         </div>
       </div>
 
-      <StepTracker status={task.status} progress={task.progress_percent} />
+      <StepTracker status={task.status} progress={task.progress_percent} stoppedAt={stoppedAt(events)} />
 
       {banner ? (
         <GateBanner
@@ -200,6 +200,9 @@ export default function Detail({
           status={task.status}
           title={banner.title}
           body={banner.body}
+          nothingToBuild={task.status === 'awaiting_plan_approval' && !!plan && (plan.affected_files ?? []).length === 0}
+          questions={plan?.open_questions ?? []}
+          summary={plan?.summary ?? null}
           onDecided={() => setReload((n) => n + 1)}
         />
       ) : null}
@@ -663,6 +666,7 @@ const DECISION_ERROR: Record<string, string> = {
   NOT_AUTHORISED: 'Your role cannot approve for this tenant. Ask a tenant admin or approver.',
   NOT_AT_GATE: 'This task has already moved on — refresh to see where it is.',
   COMMENT_REQUIRED: 'Say what should change before requesting changes.',
+  NOTHING_TO_BUILD: 'This plan changes no files, so there is nothing to approve. Answer the Planner or reject the task.',
 };
 
 /**
@@ -675,12 +679,19 @@ function GateBanner({
   status,
   title,
   body,
+  nothingToBuild = false,
+  questions = [],
+  summary = null,
   onDecided,
 }: {
   taskId: string;
   status: string;
   title: string;
   body: string;
+  /** The Planner found nothing to change: answer it or reject, never approve. */
+  nothingToBuild?: boolean;
+  questions?: string[];
+  summary?: string | null;
   onDecided: () => void;
 }) {
   const router = useRouter();
@@ -728,19 +739,35 @@ function GateBanner({
       <div className="flex flex-col gap-1">
         <div className="flex items-center gap-2 text-[16px] font-semibold text-ink">
           <span className="size-2 rounded-full bg-gate" />
-          {gate === 'plan' ? 'Your decision: approve the plan' : gate === 'merge' ? 'Your decision: approve the merge' : title}
+          {nothingToBuild
+            ? 'The Planner found nothing to change'
+            : gate === 'plan' ? 'Your decision: approve the plan' : gate === 'merge' ? 'Your decision: approve the merge' : title}
         </div>
         <p className="m-0 text-[14px] leading-relaxed text-ink-3">
-          {gate === 'plan'
+          {nothingToBuild
+            ? 'It may already be done, or the request may need more detail. Answer the Planner and it will plan again, or reject the task if nothing is needed.'
+            : gate === 'plan'
             ? 'No code is written until the plan is approved. Approving starts the Engineer. Asking for changes sends your note back to the Planner, who writes a new version.'
             : gate === 'merge'
               ? 'The checks and the review are below. Approving merges the pull request and releases it. Asking for changes sends your note back to the Engineer.'
               : body}
         </p>
       </div>
+      {nothingToBuild && (summary || questions.length) ? (
+        <div className="flex flex-col gap-2 rounded-lg border border-line-soft bg-card px-4 py-3 text-[14px] leading-relaxed">
+          {summary ? <p className="m-0 text-ink-2">{summary}</p> : null}
+          {questions.length ? (
+            <ul className="m-0 flex list-disc flex-col gap-1 pl-5 text-ink">
+              {questions.map((q) => (
+                <li key={q}>{q}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
       {asking ? (
         <label className="flex flex-col gap-1.5">
-          <span className="text-[13px] font-medium text-ink-2">What should change?</span>
+          <span className="text-[13px] font-medium text-ink-2">{nothingToBuild ? 'Your answer for the Planner' : 'What should change?'}</span>
           <textarea
             className="field-input min-h-[88px] py-2"
             value={comment}
@@ -763,12 +790,20 @@ function GateBanner({
             </>
           ) : (
             <>
-              <button className="btn-primary" disabled={!!busy} onClick={() => decide('approved')}>
-                {busy === 'approved' ? 'Approving…' : gate === 'plan' ? 'Approve plan' : 'Approve and merge'}
-              </button>
-              <button className="btn" disabled={!!busy} onClick={() => setAsking(true)}>
-                Request changes
-              </button>
+              {nothingToBuild ? (
+                <button className="btn-primary" disabled={!!busy} onClick={() => setAsking(true)}>
+                  Answer the Planner
+                </button>
+              ) : (
+                <>
+                  <button className="btn-primary" disabled={!!busy} onClick={() => decide('approved')}>
+                    {busy === 'approved' ? 'Approving…' : gate === 'plan' ? 'Approve plan' : 'Approve and merge'}
+                  </button>
+                  <button className="btn" disabled={!!busy} onClick={() => setAsking(true)}>
+                    Request changes
+                  </button>
+                </>
+              )}
               <span className="flex-1" />
               <button
                 className="min-h-[38px] cursor-pointer rounded-lg px-3 text-[14px] font-medium text-danger-ink hover:bg-danger-tint disabled:opacity-50"
@@ -806,12 +841,20 @@ const STEP_OF: Record<string, number> = {
  * The task's place in the pipeline: done steps filled, the current one in
  * blue (an agent working) or orange (a person decides), the rest waiting.
  */
-function StepTracker({ status, progress }: { status: string; progress: number | null }) {
+/** The stage a failed task was in, from its "<stage> failed: …" event. */
+function stoppedAt(events: { event_type: string; message: string | null }[]): string | null {
+  const last = [...events].reverse().find((e) => e.event_type === 'agent.failed');
+  return last?.message?.match(/^([a-z_]+) failed:/)?.[1] ?? null;
+}
+
+function StepTracker({ status, progress, stoppedAt }: { status: string; progress: number | null; stoppedAt: string | null }) {
   const done = status === 'completed';
   const stopped = status === 'failed' || status === 'cancelled' || status === 'rolled_back';
   const current = done
     ? STEPS.length
-    : STEP_OF[status] ?? Math.min(STEPS.length - 1, Math.floor(((Number(progress) || 0) / 100) * STEPS.length));
+    : STEP_OF[status] ??
+      (stopped && stoppedAt ? STEP_OF[stoppedAt] : undefined) ??
+      Math.min(STEPS.length - 1, Math.floor(((Number(progress) || 0) / 100) * STEPS.length));
   return (
     <ol aria-label="Progress" className="card m-0 grid list-none grid-cols-3 gap-x-2 gap-y-3 p-4 sm:grid-cols-5 lg:grid-cols-9">
       {STEPS.map((label, i) => {

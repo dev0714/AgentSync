@@ -45,6 +45,24 @@ export async function POST(
   }
 
   const { id } = await params;
+
+  // A plan that changes no files has nothing to build: it can be sent back
+  // with an answer or rejected, never approved.
+  if (body.gate === 'plan' && body.decision === 'approved') {
+    const { data: task } = await serviceClient()
+      .schema('agentsync')
+      .from('agent_tasks')
+      .select('stage_state')
+      .eq('id', id)
+      .maybeSingle();
+    if ((task?.stage_state as { plan_empty?: boolean } | null)?.plan_empty) {
+      return NextResponse.json(
+        { error: 'NOTHING_TO_BUILD', detail: 'The plan changes no files. Send it back with an answer, or reject it.' },
+        { status: 409 },
+      );
+    }
+  }
+
   const { data, error } = await serviceClient().rpc('agentsync_decide_approval', {
     p_user_id: user.id,
     p_task_id: id,
