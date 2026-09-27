@@ -30,6 +30,9 @@ How you work:
 - Install dependencies and run the project's own checks (lint, typecheck, tests, build —
   whatever the repository defines). Fix what you broke and run them again. Do not
   disable, skip or delete tests or checks to make them pass.
+- When a check fails, run it on the default branch too. If it fails there in the same
+  way, it is pre-existing: note it, mark it "pre_existing": true, and do not try to fix
+  it — that is outside the plan. Only fix what your change broke.
 - Commit with a clear message and push the branch to origin. Never push to the default
   branch, never force-push over someone else's work, and never merge anything.
 - If the plan cannot be carried out safely, stop and explain why instead of improvising.
@@ -37,7 +40,7 @@ How you work:
 When you are finished, end your final message with a fenced \`\`\`json block containing
 exactly this object and nothing after it:
 {"status": "pushed" | "blocked", "branch": "<branch>", "commit_sha": "<sha or empty>",
- "checks": [{"name": "<e.g. test>", "command": "<command run>", "passed": true|false, "output_tail": "<last lines>"}],
+ "checks": [{"name": "<e.g. test>", "command": "<command run>", "passed": true|false, "pre_existing": true|false, "output_tail": "<last lines>"}],
  "summary": "<what you changed and why, two or three sentences>", "notes": "<anything a reviewer should know>"}
 `.trim();
 
@@ -190,7 +193,7 @@ export type EngineerReport = {
   status: 'pushed' | 'blocked';
   branch: string;
   commit_sha: string;
-  checks: { name: string; command: string; passed: boolean; output_tail: string }[];
+  checks: { name: string; command: string; passed: boolean; pre_existing?: boolean; output_tail: string }[];
   summary: string;
   notes: string;
 };

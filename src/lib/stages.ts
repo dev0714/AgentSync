@@ -888,12 +888,28 @@ async function implementInSandbox(job: Job): Promise<Outcome> {
     `Sandbox pushed ${files.length} file(s), +${files.reduce((n, f) => n + f.additions, 0)} −${files.reduce((n, f) => n + f.deletions, 0)}, to ${branch}. ${report.summary}`.slice(0, 1500),
     { sha: head, pull_request: pr.url });
 
-  const failed = (report.checks ?? []).filter((c) => !c.passed);
+  // A check that fails the same way on the default branch was broken before this
+  // change: repairing it is outside the plan and burns a whole sandbox session.
+  // It stays on record (and in the pull request) as failing; only new failures
+  // send the Engineer back.
+  const failed = (report.checks ?? []).filter((c) => !c.passed && !preExisting(c));
+  const inherited = (report.checks ?? []).filter((c) => !c.passed && preExisting(c));
+  if (inherited.length) {
+    await logEvent(job.task.id, 'agent.checks_inherited',
+      `Already failing on ${r.defaultBranch}, not repaired: ${inherited.map((c) => c.name).join(', ')}`.slice(0, 1500));
+  }
   if (failed.length) {
     return repairOrFail(job, `${failed.length} check(s) still failing in the sandbox`,
       failed.map((c) => `## ${c.name} (${c.command})\n${(c.output_tail ?? '').slice(-4000)}`).join('\n\n'));
   }
   return { to: 'testing' };
+}
+
+/** The Engineer marked it, or its output says it fails the same way on the default branch. */
+function preExisting(c: { pre_existing?: boolean; output_tail?: string; name?: string }): boolean {
+  if (c.pre_existing) return true;
+  const text = `${c.name ?? ''}\n${c.output_tail ?? ''}`;
+  return /pre-?existing|identical (first )?(failures?|errors?)[^\n]*\bmain\b|same \d* ?failing|(also )?fails? (the same way )?on (main|master|the default branch)|no new errors|on both branch and main/i.test(text);
 }
 
 const FAILED = new Set(['failure', 'timed_out', 'cancelled', 'action_required', 'startup_failure', 'stale']);
