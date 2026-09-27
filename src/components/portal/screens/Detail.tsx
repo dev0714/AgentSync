@@ -194,6 +194,15 @@ export default function Detail({
 
       <StepTracker status={task.status} progress={task.progress_percent} stoppedAt={stoppedAt(events)} />
 
+      {task.status === 'failed' ? (
+        <RetryBanner
+          taskId={task.id}
+          code={task.error_code}
+          reason={[...events].reverse().find((e) => e.event_type === 'agent.failed')?.message ?? null}
+          onRetried={() => setReload((n) => n + 1)}
+        />
+      ) : null}
+
       {banner ? (
         <GateBanner
           taskId={task.id}
@@ -816,6 +825,79 @@ function GateBanner({
           )}
         </div>
       ) : null}
+      {problem ? <div className="text-[13.5px] text-danger-ink">{problem}</div> : null}
+    </section>
+  );
+}
+
+/**
+ * A failed task, and the way back: retry starts it again from Analyse on the
+ * same task, so the ticket keeps getting updates. The server re-checks the
+ * person may do this.
+ */
+function RetryBanner({
+  taskId,
+  code,
+  reason,
+  onRetried,
+}: {
+  taskId: string;
+  code: string | null;
+  reason: string | null;
+  onRetried: () => void;
+}) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  async function retry() {
+    setBusy(true);
+    setProblem(null);
+    try {
+      const res = await fetch(`/api/portal/tasks/${taskId}/retry`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{}',
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setProblem(
+          data.error === 'NOT_AUTHORISED'
+            ? 'Only an approver or admin for this tenant can retry a task.'
+            : data.error === 'NOT_FAILED'
+              ? 'This task is no longer failed. Reload to see where it is.'
+              : `Could not retry (${data.error ?? res.status}).`,
+        );
+        return;
+      }
+      onRetried();
+      router.refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section
+      role="status"
+      aria-label="Task failed"
+      className="flex flex-col gap-3 rounded-[10px] border border-[var(--color-danger-line)] bg-danger-tint/50 px-5 py-4"
+    >
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-2 text-[16px] font-semibold text-ink">
+          <span className="size-2 rounded-full bg-danger" />
+          This task stopped{code ? ` · ${statusLabel(code)}` : ''}
+        </div>
+        {reason ? <p className="m-0 text-[14px] leading-relaxed text-ink-3">{reason}</p> : null}
+        <p className="m-0 text-[14px] leading-relaxed text-ink-3">
+          Retrying starts it again from Analyse, on the same task and ticket. Anything already approved is asked for again.
+        </p>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <button className="btn-primary" disabled={busy} onClick={retry}>
+          {busy ? 'Retrying…' : 'Retry task'}
+        </button>
+      </div>
       {problem ? <div className="text-[13.5px] text-danger-ink">{problem}</div> : null}
     </section>
   );
