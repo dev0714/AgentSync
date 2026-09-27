@@ -3,6 +3,7 @@ import Icon, { Logo } from '@/components/site/Icon';
 import CodeMapGraph from '@/components/site/CodeMapGraph';
 import LivePipeline from '@/components/site/LivePipeline';
 import Reveal from '@/components/site/Reveal';
+import ScrollConstellation from '@/components/site/ScrollConstellation';
 import {
   agents,
   checks,
@@ -38,19 +39,23 @@ const cssVar = (ms: number) => ({ '--d': `${ms}ms` }) as React.CSSProperties;
 
 export default function Home() {
   return (
-    <Reveal className="min-h-screen bg-canvas text-ink">
-      <SiteNav />
-      <Hero />
-      <Sources />
-      <CodeMaps />
-      <HowItWorks />
-      <ServiceDesk />
-      <WhatComesBack />
-      <ControlPlane />
-      <Guardrails />
-      <Integrations />
-      <RequestTypes />
-      <CallToAction />
+    <Reveal className="relative min-h-screen bg-canvas text-ink">
+      <ScrollConstellation />
+      {/* Content sits over the background; tinted bands let a little of it through. */}
+      <div className="relative z-[1]">
+        <SiteNav />
+        <Hero />
+        <Sources />
+        <CodeMaps />
+        <HowItWorks />
+        <ServiceDesk />
+        <WhatComesBack />
+        <ControlPlane />
+        <Guardrails />
+        <Integrations />
+        <RequestTypes />
+        <CallToAction />
+      </div>
     </Reveal>
   );
 }
@@ -194,7 +199,7 @@ function Sources() {
     </div>
   );
   return (
-    <div className="rv flex flex-col gap-3 overflow-hidden border-y border-line bg-canvas-alt py-6">
+    <div className="rv flex flex-col gap-3 overflow-hidden border-y border-line bg-canvas-alt/85 py-6">
       <div className={wrap}>
         <span className={eyebrow}>TAKES WORK FROM</span>
       </div>
@@ -461,7 +466,7 @@ const IMPACT_TONE: Record<string, string> = {
 
 function CodeMaps() {
   return (
-    <section id="maps" className="scroll-mt-24 bg-night text-canvas">
+    <section id="maps" className="scroll-mt-24 bg-night/[0.93] text-canvas">
       <div className={`${wrap} flex flex-col gap-12 py-20 md:py-[104px]`}>
         <div className="rv flex flex-col gap-6 lg:flex-row lg:items-end lg:gap-16">
           <div className="flex flex-col gap-4">
@@ -564,7 +569,7 @@ function CodeMaps() {
 
 function ServiceDesk() {
   return (
-    <section className="border-y border-line bg-canvas-alt">
+    <section className="border-y border-line bg-canvas-alt/85">
       <div className={`${wrap} grid grid-cols-1 items-center gap-12 py-20 md:py-24 lg:grid-cols-2 lg:gap-20`}>
         <div className="rv flex flex-col gap-5">
           <span className="flex items-center gap-3">
@@ -697,7 +702,7 @@ function PortalShot({ mode }: { mode: 'light' | 'dark' }) {
 
 function ControlPlane() {
   return (
-    <section className="border-y border-line bg-canvas-alt">
+    <section className="border-y border-line bg-canvas-alt/85">
       <div className={`${wrap} flex flex-col gap-12 py-20 md:py-24`}>
         <div className="rv flex flex-col gap-6 lg:flex-row lg:items-end lg:gap-16">
           <div className="flex flex-col gap-4">
@@ -732,7 +737,7 @@ function ControlPlane() {
 
 function Guardrails() {
   return (
-    <section id="guardrails" className="scroll-mt-24 bg-night text-canvas">
+    <section id="guardrails" className="scroll-mt-24 bg-night/[0.93] text-canvas">
       <div className={`${wrap} flex flex-col gap-14 py-20 md:py-[104px]`}>
         <div className="grid grid-cols-1 gap-12 lg:grid-cols-2 lg:gap-20">
           <div className="rv flex flex-col gap-5">
