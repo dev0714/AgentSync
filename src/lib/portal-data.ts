@@ -432,6 +432,8 @@ export type TaskDetail = {
   report: Nullable<Record<string, unknown>>;
   security_findings: SecurityFinding[];
   events: TaskEvent[];
+  /** For a failed task: where it stopped, and whether Retry can resume the build. */
+  retry?: { stage: string | null; plan_version: number | null; can_resume_build: boolean } | null;
   /** The Engineer's sandbox while it works (added by the task API route). */
   live?: {
     started_at: string | null;

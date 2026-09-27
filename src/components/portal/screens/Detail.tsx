@@ -237,6 +237,7 @@ export default function Detail({
           taskId={task.id}
           code={task.error_code}
           reason={[...events].reverse().find((e) => e.event_type === 'agent.failed')?.message ?? null}
+          resume={detail.retry?.can_resume_build ? detail.retry.plan_version : null}
           onRetried={() => setReload((n) => n + 1)}
         />
       ) : null}
@@ -964,25 +965,29 @@ function RetryBanner({
   taskId,
   code,
   reason,
+  resume,
   onRetried,
 }: {
   taskId: string;
   code: string | null;
   reason: string | null;
+  /** The approved plan's version when the build can resume on it; null to start over. */
+  resume: number | null;
   onRetried: () => void;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
-  async function retry() {
+  async function retry(from: 'build' | 'start') {
+    if (from === 'start' && resume !== null && !window.confirm('Start over from Analyse? The Planner writes a new plan and it needs approving again.')) return;
     setBusy(true);
     setProblem(null);
     try {
       const res = await fetch(`/api/portal/tasks/${taskId}/retry`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: '{}',
+        body: JSON.stringify({ from }),
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
@@ -991,6 +996,8 @@ function RetryBanner({
             ? 'Only an approver or admin for this tenant can retry a task.'
             : data.error === 'NOT_FAILED'
               ? 'This task is no longer failed. Reload to see where it is.'
+              : data.error === 'CANNOT_RESUME_BUILD'
+              ? 'The build can no longer resume on this plan. Start over from Analyse.'
               : `Could not retry (${data.error ?? res.status}).`,
         );
         return;
@@ -1015,13 +1022,26 @@ function RetryBanner({
         </div>
         {reason ? <p className="m-0 text-[14px] leading-relaxed text-ink-3">{reason}</p> : null}
         <p className="m-0 text-[14px] leading-relaxed text-ink-3">
-          Retrying starts it again from Analyse, on the same task and ticket. Anything already approved is asked for again.
+          {resume !== null
+            ? `Retrying the build sends it back to the Engineer with plan v${resume}, which stays approved, on the same branch. Starting over goes back to Analyse and needs a new plan approved.`
+            : 'Retrying starts it again from Analyse, on the same task and ticket. The new plan needs approving again.'}
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <button className="btn-primary" disabled={busy} onClick={retry}>
-          {busy ? 'Retrying…' : 'Retry task'}
-        </button>
+        {resume !== null ? (
+          <>
+            <button className="btn-primary" disabled={busy} onClick={() => retry('build')}>
+              {busy ? 'Retrying…' : 'Retry build'}
+            </button>
+            <button className="btn" disabled={busy} onClick={() => retry('start')}>
+              Start over from Analyse
+            </button>
+          </>
+        ) : (
+          <button className="btn-primary" disabled={busy} onClick={() => retry('start')}>
+            {busy ? 'Retrying…' : 'Retry task'}
+          </button>
+        )}
       </div>
       {problem ? <div className="text-[13.5px] text-danger-ink">{problem}</div> : null}
     </section>

@@ -45,5 +45,12 @@ export async function GET(
     }
   }
 
-  return NextResponse.json({ ...detail, live });
+  // A failed task: where it stopped, and whether Retry can resume the build.
+  let retry = null;
+  if (detail.task.status === 'failed') {
+    const { data } = await serviceClient().rpc('agentsync_retry_point', { p_task_id: id });
+    retry = (data as { stage: string | null; plan_version: number | null; can_resume_build: boolean } | null) ?? null;
+  }
+
+  return NextResponse.json({ ...detail, live, retry });
 }
