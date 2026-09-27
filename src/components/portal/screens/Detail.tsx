@@ -980,15 +980,29 @@ function StepTracker({ status, progress, stoppedAt }: { status: string; progress
         const colour = isNow ? (stopped ? 'var(--color-danger)' : gate && isNow ? 'var(--color-gate)' : 'var(--color-accent)') : isDone ? 'var(--color-ink-3)' : 'var(--color-line-soft)';
         return (
           <li key={label} aria-current={isNow ? 'step' : undefined} className="flex flex-col gap-2">
-            <span aria-hidden="true" className="h-1 rounded-[2px] transition-colors duration-500" style={{ background: done ? 'var(--color-ok)' : colour }} />
+            {/* The bar fills left to right, one step after another; the step being
+                worked shows a moving sheen, a gate pulses, a stop shakes once. */}
+            <span aria-hidden="true" className="st-track relative h-1 overflow-hidden rounded-[2px] bg-line-soft">
+              <span
+                className={`st-fill absolute inset-0 rounded-[2px] ${isNow && !stopped && !gate ? 'st-working' : ''}`}
+                style={{
+                  background: done ? 'var(--color-ok)' : colour,
+                  transform: `scaleX(${done || isDone || isNow ? 1 : 0})`,
+                  ['--st-d' as string]: `${i * 90}ms`,
+                }}
+              />
+            </span>
             <span className={`flex items-center gap-1.5 text-[12.5px] ${isNow ? 'font-semibold text-ink' : isDone || done ? 'font-medium text-ink-3' : 'text-muted-3'}`}>
               <span
                 aria-hidden="true"
-                className="flex size-4 shrink-0 items-center justify-center rounded-full border-[1.5px] text-[9.5px] font-bold transition-colors duration-500"
+                className={`flex size-4 shrink-0 items-center justify-center rounded-full border-[1.5px] text-[9.5px] font-bold transition-colors duration-500 ${
+                  isNow ? (stopped ? 'st-stop' : gate ? 'st-gate' : 'st-now') : isDone || done ? 'st-tick' : ''
+                }`}
                 style={{
                   background: done ? 'var(--color-ok)' : isDone ? 'var(--color-ink-3)' : isNow ? colour : 'transparent',
                   borderColor: done ? 'var(--color-ok)' : isDone ? 'var(--color-ink-3)' : isNow ? colour : 'var(--color-line-strong)',
                   color: 'var(--color-card)',
+                  ['--st-d' as string]: `${i * 90 + 250}ms`,
                 }}
               >
                 {isDone || done ? '✓' : isNow && stopped ? '!' : ''}
