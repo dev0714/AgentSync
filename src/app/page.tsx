@@ -878,13 +878,6 @@ function CallToAction() {
           >
             Sign in
           </Link>
-          <Link
-            href="/portal"
-            className="btn-lift inline-flex min-h-[56px] items-center justify-center gap-2.5 rounded-[14px] border-[1.5px] border-white px-6 text-[17px] font-semibold text-white hover:text-white"
-          >
-            See the control plane
-            <Icon name="arrow" size={18} stroke={2} className="nudge" />
-          </Link>
         </div>
 
         <div className="mt-16 flex flex-col gap-5 border-t border-white/70 pt-7 text-[14.5px] md:flex-row md:items-center md:gap-8">
