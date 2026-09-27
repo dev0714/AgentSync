@@ -138,6 +138,8 @@ const STOPWORDS = new Set([
   // ticket filler
   'please', 'need', 'needs', 'want', 'wants', 'able', 'also', 'when', 'then', 'there', 'just', 'like',
   'should', 'issue', 'problem', 'ticket', 'client', 'user', 'users', 'page', 'currently',
+  'add', 'adds', 'added', 'show', 'shows', 'shown', 'display', 'displayed', 'new', 'request', 'applicable',
+  'details', 'detail', 'change', 'changes', 'update', 'updated', 'make', 'ensure', 'field', 'fields',
 ]);
 
 const RELATIONAL = new Set([

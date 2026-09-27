@@ -37,6 +37,7 @@ import {
 } from './attachments';
 import { recall, remember, renderMemoryBlock } from './memory';
 import { DOC_PATH, recordAgentDoc } from './project-docs';
+import { queryTerms } from './graph-query';
 import { mapBriefing, planImpact, queueMap, readMapFile, recordMapFeedback, type Impact } from './project-maps';
 import { optionalSecret } from './secrets';
 import { serviceClient } from './supabase';
@@ -237,6 +238,7 @@ function taskBrief(job: Job): string {
     `Title: ${t.title}`,
     '',
     t.description ?? '(no description)',
+    ...attachmentLine(t.stage_state.attachment_terms as AttachmentTerms | undefined),
     '',
     'Acceptance criteria:',
     criteria,
@@ -263,6 +265,83 @@ const KEY_FILES = [
   'pyproject.toml', 'requirements.txt', 'go.mod', 'Cargo.toml', 'composer.json',
 ];
 
+/** What the attachments show, in words a code search can use. */
+type AttachmentTerms = { screen: string; labels: string[]; fields: string[]; terms: string[] };
+
+const ATTACHMENT_TERMS_SCHEMA = {
+  type: 'object',
+  properties: {
+    screen: { type: 'string', description: 'The screen, page or panel title shown, if any; else an empty string.' },
+    labels: { type: 'array', items: { type: 'string' }, description: 'Visible headings, tab names, button and section labels, exactly as written.' },
+    fields: { type: 'array', items: { type: 'string' }, description: 'Form field or column names shown.' },
+    terms: { type: 'array', items: { type: 'string' }, description: 'Words likely to appear in the code for this screen: likely component, route, table or column names (e.g. ClientDetails, contact_person).' },
+  },
+  required: ['screen', 'labels', 'fields', 'terms'],
+  additionalProperties: false,
+};
+
+const ATTACHMENT_READER = {
+  key: 'planner',
+  display_name: 'Attachment reader',
+  system_prompt:
+    'You read screenshots and documents attached to a software change request and list what they show, so the code can be searched for it. ' +
+    'Copy visible text exactly; do not describe colours or layout; do not guess what should change. At most 40 items across all lists.',
+  model: 'claude-haiku-4-5',
+  effort: null,
+  tier: null,
+  limits: null,
+};
+
+/**
+ * Screenshots and PDFs often name the screen a ticket means when the ticket
+ * does not ("CLIENT DETAILS", the fields on it). Pull those words out once, so
+ * the code map searches for them too. Best effort: without it, Analyse goes on.
+ */
+async function describeAttachments(job: Job): Promise<AttachmentTerms | null> {
+  const docs = (await readyAttachments(job.task.id)).filter(
+    (a) => a.media_type === 'application/pdf' || a.media_type.startsWith('image/'),
+  );
+  if (docs.length === 0) return null;
+  try {
+    const out = await runAgent<AttachmentTerms>({
+      ctx: aiContext(job),
+      agent: ATTACHMENT_READER,
+      projectName: job.project.name,
+      prompt: `${taskBrief(job)}\n\nList what the attached files show.`,
+      schema: ATTACHMENT_TERMS_SCHEMA,
+      maxTokens: 800,
+      attachments: docs,
+    });
+    const clean = (xs: unknown) => (Array.isArray(xs) ? xs : []).map((x) => String(x).trim()).filter(Boolean).slice(0, 40);
+    return { screen: String(out.screen ?? '').trim(), labels: clean(out.labels), fields: clean(out.fields), terms: clean(out.terms) };
+  } catch (e) {
+    console.error('could not read the attachments for search terms', e);
+    return null;
+  }
+}
+
+function attachmentLine(a: AttachmentTerms | undefined): string[] {
+  if (!a) return [];
+  const shown = [...a.labels, ...a.fields].filter((x, i, all) => all.indexOf(x) === i).slice(0, 30);
+  if (!a.screen && shown.length === 0) return [];
+  return ['', `Attachments show: ${[a.screen, shown.join(', ')].filter(Boolean).join(' — ')}`];
+}
+
+/**
+ * The words to search the code with: the request without the source system's
+ * footer ("Ticket TK-1 · New Request · Acme"), in ordinary case, plus what the
+ * attachments show.
+ */
+function requestSearchText(job: Job, a: AttachmentTerms | null): string {
+  const body = `${job.task.title}\n${job.task.description ?? ''}`
+    .split('\n')
+    .filter((line) => !/^\s*Ticket\s+\S+\s+·/.test(line) && !/·\s*New Request\s*·/i.test(line))
+    .join('\n')
+    .replace(/^[A-Z]{2,}-\d+:\s*/, '');
+  const extra = a ? [a.screen, ...a.labels, ...a.fields, ...a.terms].join('\n') : '';
+  return `${body}\n${extra}`.toLowerCase();
+}
+
 async function analyse(job: Job): Promise<Outcome> {
   // Documents from the source system: download, check, extract — once.
   const docs = await prepareAttachments(job.task.id);
@@ -270,14 +349,18 @@ async function analyse(job: Job): Promise<Outcome> {
     await logEvent(job.task.id, 'attachments.prepared',
       `${docs.ready} attachment(s) ready${docs.rejected.length ? `; rejected: ${docs.rejected.join('; ')}` : ''}`);
   }
+  const shown = await describeAttachments(job);
+  if (shown) {
+    job.task.stage_state.attachment_terms = shown;
+    await update(job, { stage_state: { attachment_terms: shown } });
+  }
+  const searchText = requestSearchText(job, shown);
+
   const r = repoOf(job);
   const client = await gh(job);
   const paths = await listPaths(client, r, r.defaultBranch);
 
-  const words = `${job.task.title} ${job.task.description ?? ''}`
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((w) => w.length >= 4);
+  const words = [...new Set(queryTerms(searchText).filter((w) => w.length >= 4))];
   const scored = paths
     .filter((p) => !/(^|\/)(node_modules|dist|build|vendor|\.next)\//.test(p))
     .map((p) => ({ p, score: words.filter((w) => p.toLowerCase().includes(w)).length }))
@@ -286,25 +369,31 @@ async function analyse(job: Job): Promise<Outcome> {
     .slice(0, 12)
     .map((x) => x.p);
 
-  const wanted = [...KEY_FILES.filter((f) => paths.includes(f)), ...scored];
+  // The project's code map (Graphify): its report, lessons from past tasks,
+  // the part of the code the request is about, and what depends on it. The
+  // files its best matches live in are read in full, ahead of the ones found
+  // by name.
+  const map = await mapBriefing(job.task.project_id, searchText, scored)
+    .catch((e) => { console.error('map briefing failed', e); return null; });
+  const inRepo = (f: string) => paths.find((p) => p === f || p.endsWith(`/${f}`) || f.endsWith(`/${p}`)) ?? null;
+  const fromMap = [...new Set((map?.files ?? []).map(inRepo).filter((p): p is string => !!p))].slice(0, 6);
+
+  const wanted = [...new Set([...KEY_FILES.filter((f) => paths.includes(f)), ...fromMap, ...scored])].slice(0, 20);
   const files: Record<string, string> = {};
   for (const path of wanted) {
     const text = await readFile(client, r, path, r.defaultBranch);
     if (text !== null) files[path] = text.slice(0, 15_000);
   }
-
-  // The project's code map (Graphify): its report, lessons from past tasks,
-  // the part of the code the request is about, and what depends on the files
-  // it looks likely to touch.
-  const map = await mapBriefing(job.task.project_id, `${job.task.title}\n${job.task.description ?? ''}`, scored)
-    .catch((e) => { console.error('map briefing failed', e); return null; });
   if (map) files['(AgentSync code map — reference only, not a repository file)'] = map.text.slice(0, 18_000);
 
   await update(job, {
     stage_state: { context: { paths: paths.slice(0, 3000), total_paths: paths.length, files }, map_seeds: map?.seeds ?? [] },
   });
+  const read = Object.keys(files).filter((f) => !f.startsWith('('));
   await logEvent(job.task.id, 'agent.analysed',
-    `Read ${Object.keys(files).length} files from ${r.owner}/${r.repo} (${paths.length} in the repository)`);
+    `Read ${read.length} files from ${r.owner}/${r.repo} (${paths.length} in the repository)` +
+    `${fromMap.length ? `; ${fromMap.filter((f) => read.includes(f)).length} chosen by the code map` : ''}` +
+    `${shown ? `; attachments show ${shown.screen || `${shown.labels.length + shown.fields.length} labels`}` : ''}`);
   return { to: 'planning' };
 }
 

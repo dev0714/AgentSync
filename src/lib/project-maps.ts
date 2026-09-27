@@ -506,6 +506,8 @@ export type MapBriefing = {
   text: string;
   /** Labels of the nodes the briefing started from (recorded with the task's outcome). */
   seeds: string[];
+  /** The files those nodes live in, best match first: worth reading in full. */
+  files: string[];
 };
 
 /**
@@ -519,6 +521,7 @@ export async function mapBriefing(projectId: string, request: string, relevantPa
   if (!info?.files) return null;
   const parts: string[] = [];
   const seeds: string[] = [];
+  const files: string[] = [];
 
   if (info.files['GRAPH_REPORT.md']) {
     const report = await readMapFile(projectId, 'GRAPH_REPORT.md');
@@ -534,6 +537,10 @@ export async function mapBriefing(projectId: string, request: string, relevantPa
     const q = query(graph, request, { depth: 2, budget: 1500 });
     if (q.seeds.length) {
       seeds.push(...q.seeds.map((s) => s.label));
+      for (const s of q.seeds) {
+        const f = (s.source_file ?? '').replace(/^\.?\//, '');
+        if (f && !files.includes(f)) files.push(f);
+      }
       parts.push(`## The part of the code this request is about (graphify query)\n\n${q.text}`);
     }
     const deps: string[] = [];
@@ -543,7 +550,7 @@ export async function mapBriefing(projectId: string, request: string, relevantPa
     }
     if (deps.length) parts.push(`## What depends on the files that look relevant (graphify affected)\n\n${deps.join('\n\n')}`);
   }
-  return parts.length ? { text: parts.join('\n\n'), seeds } : null;
+  return parts.length ? { text: parts.join('\n\n'), seeds, files: files.slice(0, 6) } : null;
 }
 
 export type Impact = {
