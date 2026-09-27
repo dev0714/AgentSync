@@ -444,15 +444,76 @@ type Who = 'all' | 'person' | 'agent' | 'system';
 function whoOf(actor: string | null): Exclude<Who, 'all'> {
   const a = (actor ?? '').toLowerCase();
   if (a.includes('@')) return 'person';
-  if (/^(worker|agent|planner|engineer|reviewer|analyst|router)/.test(a) || a.includes('agent')) return 'agent';
+  if (/^(worker|kick-|agent|planner|engineer|reviewer|analyst|router)/.test(a) || a.includes('agent')) return 'agent';
   return 'system';
 }
 
 const WHO_NAME = { person: 'Person', agent: 'Agent', system: 'System' };
 
-export function Audit({ audit }: { audit: AuditRow[] }) {
+type Person = { email: string; name: string };
+type Actor = { name: string; sub: string; initials: string; email: string | null };
+
+const KICKED_BY: Record<string, string> = {
+  decision: 'woken by a decision',
+  retry: 'woken by a retry',
+  submit: 'woken by a new request',
+  stop: 'woken by a stop',
+};
+
+function initialsOf(name: string): string {
+  const words = name.replace(/[^\p{L}\p{N} ]/gu, ' ').trim().split(/\s+/).filter(Boolean);
+  if (words.length >= 2) return (words[0][0] + words[words.length - 1][0]).toUpperCase();
+  return (words[0] ?? '··').slice(0, 2).toUpperCase();
+}
+
+/**
+ * Who an entry's actor is, for people: a person by their name (their
+ * address underneath), every worker instance as AgentSync, an operator tool
+ * by its name, a source system as the API.
+ */
+function actorOf(actor: string | null, people: Map<string, string>): Actor {
+  const a = (actor ?? '').trim();
+  const user = /^user:(.+)$/i.exec(a);
+  if (user) {
+    const email = user[1];
+    const name = people.get(email.toLowerCase()) ?? email;
+    return { name, sub: name === email ? 'Person' : `Person · ${email}`, initials: initialsOf(name === email ? email.split('@')[0] : name), email };
+  }
+  if (/^worker(-|$)/i.test(a)) return { name: 'AgentSync', sub: 'Worker', initials: 'AS', email: null };
+  const kick = /^kick-([a-z]+)/i.exec(a);
+  if (kick) return { name: 'AgentSync', sub: `Worker · ${KICKED_BY[kick[1].toLowerCase()] ?? `woken by ${kick[1]}`}`, initials: 'AS', email: null };
+  const op = /^operator:(.+)$/i.exec(a);
+  if (op) {
+    const tool = op[1].split(/[-_\s]+/).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    return { name: tool, sub: 'Operator', initials: initialsOf(tool), email: null };
+  }
+  if (a.toLowerCase() === 'api') return { name: 'API', sub: 'Source system', initials: 'API'.slice(0, 2), email: null };
+  const name = a || 'System';
+  return { name, sub: WHO_NAME[whoOf(actor)], initials: name.replace(/[^a-z0-9]/gi, '').slice(0, 2).toUpperCase() || '··', email: null };
+}
+
+/** The message with the actor's address replaced by their name. */
+function readable(message: string, actor: Actor): string {
+  if (!actor.email || actor.name === actor.email) return message;
+  return message.split(actor.email).join(actor.name);
+}
+
+export function Audit({ audit, tenantSlug }: { audit: AuditRow[]; tenantSlug?: string | null }) {
   const [who, setWho] = useState<Who>('all');
   const [q, setQ] = useState('');
+  const [people, setPeople] = useState<Map<string, string>>(new Map());
+
+  useEffect(() => {
+    let live = true;
+    fetch(`/api/portal/people?tenant=${encodeURIComponent(tenantSlug ?? '')}`, { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { people?: Person[] } | null) => {
+        if (live && d?.people) setPeople(new Map(d.people.map((p) => [p.email.toLowerCase(), p.name])));
+      })
+      .catch(() => undefined);
+    return () => { live = false; };
+  }, [tenantSlug]);
+
   if (audit.length === 0) {
     return (
       <Empty
@@ -465,7 +526,7 @@ export function Audit({ audit }: { audit: AuditRow[] }) {
   const needle = q.trim().toLowerCase();
   const shown = audit.filter((al) =>
     (who === 'all' || whoOf(al.actor) === who) &&
-    (!needle || `${al.event_type} ${al.message ?? ''} ${al.actor ?? ''}`.toLowerCase().includes(needle)));
+    (!needle || `${al.event_type} ${al.message ?? ''} ${al.actor ?? ''} ${actorOf(al.actor, people).name}`.toLowerCase().includes(needle)));
   const count = (k: Exclude<Who, 'all'>) => audit.filter((al) => whoOf(al.actor) === k).length;
 
   return (
@@ -512,7 +573,8 @@ export function Audit({ audit }: { audit: AuditRow[] }) {
           </div>
           {shown.map((al) => {
             const kind = whoOf(al.actor);
-            const name = al.actor ?? 'System';
+            const actor = actorOf(al.actor, people);
+            const message = al.message ? readable(al.message, actor) : statusLabel(al.event_type);
             return (
               <div key={al.id} className="grid grid-cols-[130px_200px_minmax(0,1fr)_200px] items-center gap-4 border-b border-line-faint px-4 py-2.5">
                 <span className="text-[12.5px] text-muted-3 tabular-nums" title={al.created_at}>
@@ -523,15 +585,15 @@ export function Audit({ audit }: { audit: AuditRow[] }) {
                     aria-hidden="true"
                     className={`flex size-6 shrink-0 items-center justify-center text-[10.5px] font-semibold ${kind === 'person' ? 'rounded-full' : 'rounded-md'} ${kind === 'agent' ? 'bg-agent-tint text-agent-ink' : 'bg-line-faint text-ink-3'}`}
                   >
-                    {name.replace(/[^a-z0-9]/gi, '').slice(0, 2).toUpperCase() || '··'}
+                    {actor.initials}
                   </span>
-                  <span className="flex min-w-0 flex-col leading-tight">
-                    <span className="truncate text-[13px] font-medium">{name}</span>
-                    <span className="text-[11.5px] text-muted-3">{WHO_NAME[kind]}</span>
+                  <span className="flex min-w-0 flex-col leading-tight" title={al.actor ?? ''}>
+                    <span className="truncate text-[13px] font-medium">{actor.name}</span>
+                    <span className="truncate text-[11.5px] text-muted-3">{actor.sub}</span>
                   </span>
                 </span>
                 <span className="truncate text-[13.5px] text-ink-3" title={al.message ?? ''}>
-                  {al.message || statusLabel(al.event_type)}
+                  {message}
                 </span>
                 <span className="mono truncate text-[12px]" style={{ color: eventColour(al.event_type) }}>
                   {al.event_type}

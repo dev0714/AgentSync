@@ -277,7 +277,7 @@ export default function Portal({
                 onConnect={() => { setConnTab("deploy"); setScreen("connections"); }}
               />
             ) : null}
-            {screen === "audit" ? <Audit audit={data.audit} /> : null}
+            {screen === "audit" ? <Audit audit={data.audit} tenantSlug={data.tenant?.slug ?? null} /> : null}
             {screen === "project" ? (
               <Project
                 projects={data.projects}
