@@ -298,7 +298,7 @@ export default function Portal({
             ) : null}
             {screen === "sources" ? <Sources sources={data.sources} tenantSlug={data.tenant?.slug ?? null} /> : null}
             {screen === "usage" ? (
-              <Usage usage={data.usage} tenantSlug={data.tenant?.slug ?? null} />
+              <Usage usage={data.usage} tenantSlug={data.tenant?.slug ?? null} onOpenTask={(id) => openTask(id)} />
             ) : null}
             {screen === "connections" ? (
               <Connections
