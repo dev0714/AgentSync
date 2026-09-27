@@ -132,6 +132,24 @@ export default function Portal({
     window.history.replaceState(null, "", `/portal${rest ? `?${rest}` : ""}`);
   }, []);
 
+  // Live: re-read the overview (task list, counts, approvals) in the
+  // background without losing where you are — every few seconds while work is
+  // in flight, less often when idle, and at once on returning to the tab.
+  const busy = data.metrics.in_flight > 0;
+  useEffect(() => {
+    const tick = () => {
+      if (document.visibilityState === "visible") router.refresh();
+    };
+    const id = setInterval(tick, busy ? 5_000 : 30_000);
+    document.addEventListener("visibilitychange", tick);
+    window.addEventListener("focus", tick);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", tick);
+      window.removeEventListener("focus", tick);
+    };
+  }, [busy, router]);
+
   const pendingCount = data.approvals.length + data.metrics.needs_information;
 
   const openTask = (id: string, tab: DetailTab = "plan") => {

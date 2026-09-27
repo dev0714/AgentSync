@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { TaskDetail } from '@/lib/portal-data';
 import {
   RESULT_COLOUR,
@@ -68,6 +68,8 @@ const GATE_BANNER: Record<string, { title: string; body: string }> = {
   },
 };
 
+const FINISHED = new Set(['completed', 'failed', 'cancelled', 'rolled_back']);
+
 /** A stage the task has actually recorded, never one inferred from the status. */
 function nothing(text: string) {
   return (
@@ -92,25 +94,57 @@ export default function Detail({
   const [error, setError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
 
+  // A different task starts from a blank page; the same task never does.
+  const loaded = useRef(false);
   useEffect(() => {
-    let cancelled = false;
+    loaded.current = false;
     setDetail(null);
     setError(null);
-    fetch(`/api/portal/tasks/${taskId}`)
+  }, [taskId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/portal/tasks/${taskId}`, { cache: 'no-store' })
       .then(async (r) => {
         if (!r.ok) throw new Error(r.status === 404 ? 'No such task.' : 'Could not load this task.');
         return r.json();
       })
       .then((d: TaskDetail) => {
-        if (!cancelled) setDetail(d);
+        if (!cancelled) {
+          loaded.current = true;
+          setDetail(d);
+          setError(null);
+        }
       })
       .catch((e: Error) => {
-        if (!cancelled) setError(e.message);
+        // A failed background refresh keeps what is on screen.
+        if (!cancelled && !loaded.current) setError(e.message);
       });
     return () => {
       cancelled = true;
     };
   }, [taskId, reload]);
+
+  // Live: while an agent is working, check every few seconds; at a gate, less
+  // often (someone else may decide); finished tasks don't change. Hidden tabs
+  // wait, and coming back to the tab refreshes at once.
+  const status = detail?.task.status ?? '';
+  useEffect(() => {
+    if (!status || FINISHED.has(status)) return;
+    const every = isGate(status) ? 15_000 : 3_000;
+    const tick = () => {
+      if (document.visibilityState === 'visible') setReload((n) => n + 1);
+    };
+    const id = setInterval(tick, every);
+    const onVisible = () => tick();
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+    };
+  }, [status]);
 
   const back = (
     <button
@@ -946,11 +980,11 @@ function StepTracker({ status, progress, stoppedAt }: { status: string; progress
         const colour = isNow ? (stopped ? 'var(--color-danger)' : gate && isNow ? 'var(--color-gate)' : 'var(--color-accent)') : isDone ? 'var(--color-ink-3)' : 'var(--color-line-soft)';
         return (
           <li key={label} aria-current={isNow ? 'step' : undefined} className="flex flex-col gap-2">
-            <span aria-hidden="true" className="h-1 rounded-[2px]" style={{ background: done ? 'var(--color-ok)' : colour }} />
+            <span aria-hidden="true" className="h-1 rounded-[2px] transition-colors duration-500" style={{ background: done ? 'var(--color-ok)' : colour }} />
             <span className={`flex items-center gap-1.5 text-[12.5px] ${isNow ? 'font-semibold text-ink' : isDone || done ? 'font-medium text-ink-3' : 'text-muted-3'}`}>
               <span
                 aria-hidden="true"
-                className="flex size-4 shrink-0 items-center justify-center rounded-full border-[1.5px] text-[9.5px] font-bold"
+                className="flex size-4 shrink-0 items-center justify-center rounded-full border-[1.5px] text-[9.5px] font-bold transition-colors duration-500"
                 style={{
                   background: done ? 'var(--color-ok)' : isDone ? 'var(--color-ink-3)' : isNow ? colour : 'transparent',
                   borderColor: done ? 'var(--color-ok)' : isDone ? 'var(--color-ink-3)' : isNow ? colour : 'var(--color-line-strong)',
