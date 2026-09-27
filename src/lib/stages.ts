@@ -1204,8 +1204,9 @@ function commandType(name: string): string {
 async function repairOrFail(job: Job, reason: string, feedback: string): Promise<Outcome> {
   const max = job.runtime?.maximum_repair_attempts ?? 2;
   if (job.task.repair_attempts < max) {
-    await update(job, { repair_attempts: job.task.repair_attempts + 1, stage_state: { repair_feedback: feedback } });
-    return { to: 'implementing', message: `${reason}; repair attempt ${job.task.repair_attempts + 1} of ${max}` };
+    const attempt = job.task.repair_attempts + 1;
+    await update(job, { repair_attempts: attempt, stage_state: { repair_feedback: feedback } });
+    return { to: 'implementing', message: `${reason}; repair attempt ${attempt} of ${max}` };
   }
   throw new StageFailed('REPAIR_LIMIT_REACHED', `${reason} after ${max} repair attempt(s)`);
 }
